@@ -1,0 +1,12 @@
+# усі node_modules в проєкті
+**/node_modules/
+
+# кеші/збірки
+dist/
+build/
+.out/
+.next/
+
+# конфіденційне
+.env
+*.env
