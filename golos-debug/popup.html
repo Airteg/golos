@@ -1,0 +1,63 @@
+<!DOCTYPE html>
+<html lang="uk">
+  <head>
+    <meta charset="utf-8" />
+    <title>Golos status</title>
+    <style>
+      body {
+        margin: 0;
+        padding: 10px;
+        font-family: system-ui, -apple-system, BlinkMacSystemFont, "Segoe UI",
+          sans-serif;
+        font-size: 13px;
+        min-width: 220px;
+      }
+
+      .row {
+        display: flex;
+        align-items: center;
+        gap: 8px;
+        margin-bottom: 8px;
+      }
+
+      .dot {
+        width: 10px;
+        height: 10px;
+        border-radius: 50%;
+        background: #aaa;
+      }
+
+      .dot.ok {
+        background: #2ecc71;
+      }
+
+      .dot.bad {
+        background: #e74c3c;
+      }
+
+      #detail {
+        font-size: 11px;
+        color: #666;
+        white-space: pre-wrap;
+      }
+
+      button {
+        padding: 4px 8px;
+        font-size: 12px;
+        cursor: pointer;
+      }
+    </style>
+  </head>
+  <body>
+    <div class="row">
+      <div id="status-dot" class="dot"></div>
+      <div id="status-text">Перевірка статусу…</div>
+    </div>
+
+    <div id="detail"></div>
+
+    <button id="refresh">Оновити статус</button>
+
+    <script src="popup.js"></script>
+  </body>
+</html>

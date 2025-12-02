@@ -1,7 +1,7 @@
 {
   "manifest_version": 3,
   "name": "Golos – debug",
-  "version": "0.0.3",
+  "version": "0.0.4",
   "description": "Alt+Shift+G: прочитати текст з активного поля і замінити його",
   "permissions": ["activeTab"],
   "host_permissions": ["<all_urls>"],
@@ -22,5 +22,9 @@
       "js": ["content-script.js"],
       "run_at": "document_idle"
     }
-  ]
+  ],
+  "action": {
+    "default_title": "Golos status",
+    "default_popup": "popup.html"
+  }
 }
