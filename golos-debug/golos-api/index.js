@@ -63,9 +63,8 @@ app.get("/health", async (req, res) => {
     const started = Date.now();
 
     const response = await openai.responses.create({
-      model: "gpt-5.1-mini",
+      model: "gpt-4o-mini",
       input: "ping",
-      max_output_tokens: 1,
     });
 
     const latencyMs = Date.now() - started;
@@ -74,9 +73,9 @@ app.get("/health", async (req, res) => {
     return res.json({
       ok: true,
       stage: "openai",
-      model: "gpt-5.1-mini",
+      model: "gpt-4o-mini",
       latencyMs,
-      sample: text, // маленький текст типу "pong" або подібне
+      sample: text,
     });
   } catch (err) {
     console.error("[Golos] /health OpenAI error:", err);
@@ -105,7 +104,7 @@ app.post("/process", async (req, res) => {
     const instructions = getInstructions(mode);
 
     const response = await openai.responses.create({
-      model: "gpt-5.1-mini",
+      model: "gpt-4o-mini",
       input: text,
       instructions,
     });
