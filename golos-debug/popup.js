@@ -48,11 +48,32 @@ function requestStatus(force = false) {
   );
 }
 
+function loadMode() {
+  chrome.storage.sync.get({ golosMode: "uk-clean" }, (result) => {
+    const select = document.getElementById("mode-select");
+    if (!select) return;
+    select.value = result.golosMode || "uk-clean";
+  });
+}
+
+function saveMode(value) {
+  chrome.storage.sync.set({ golosMode: value }, () => {
+    console.log("[Golos popup] Mode saved:", value);
+  });
+}
+
 document.addEventListener("DOMContentLoaded", () => {
   requestStatus(false);
+  loadMode();
 
   const btn = document.getElementById("refresh");
   btn.addEventListener("click", () => {
     requestStatus(true);
+  });
+
+  const select = document.getElementById("mode-select");
+  select.addEventListener("change", (e) => {
+    const value = e.target.value;
+    saveMode(value);
   });
 });

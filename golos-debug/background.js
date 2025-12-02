@@ -4,6 +4,13 @@
 
 const HEALTH_MAX_AGE_MS = 15_000; // 15 секунд
 
+function getCurrentMode() {
+  return new Promise((resolve) => {
+    chrome.storage.sync.get({ golosMode: "uk-clean" }, (result) => {
+      resolve(result.golosMode || "uk-clean");
+    });
+  });
+}
 let lastHealth = {
   ok: null, // true / false / null
   reason: null, // "network", "backend-status-500", ...
@@ -11,7 +18,7 @@ let lastHealth = {
   checkedAt: 0, // timestamp
 };
 
-// --- Функції перевірки здоров'я (Твоя логіка) ---
+// --- Функції перевірки здоров'я ---
 
 async function runHealthCheck() {
   try {

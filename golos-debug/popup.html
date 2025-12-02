@@ -2,7 +2,7 @@
 <html lang="uk">
   <head>
     <meta charset="utf-8" />
-    <title>Golos status</title>
+    <title>Golos</title>
     <style>
       body {
         margin: 0;
@@ -10,7 +10,7 @@
         font-family: system-ui, -apple-system, BlinkMacSystemFont, "Segoe UI",
           sans-serif;
         font-size: 13px;
-        min-width: 220px;
+        min-width: 230px;
       }
 
       .row {
@@ -39,6 +39,20 @@
         font-size: 11px;
         color: #666;
         white-space: pre-wrap;
+        margin-bottom: 8px;
+      }
+
+      label {
+        font-size: 12px;
+        display: block;
+        margin-bottom: 4px;
+      }
+
+      select {
+        width: 100%;
+        font-size: 12px;
+        padding: 3px;
+        margin-bottom: 8px;
       }
 
       button {
@@ -55,6 +69,15 @@
     </div>
 
     <div id="detail"></div>
+
+    <label for="mode-select">Режим обробки:</label>
+    <select id="mode-select">
+      <option value="uk-clean">🇺🇦 Українська — виправити текст</option>
+      <option value="en-clean">🇬🇧 English — fix grammar</option>
+      <option value="uk-en-mix">
+        🇺🇦+🇬🇧 Українська з вставками англійською
+      </option>
+    </select>
 
     <button id="refresh">Оновити статус</button>
 
