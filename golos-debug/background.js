@@ -11,6 +11,7 @@ function getCurrentMode() {
     });
   });
 }
+
 let lastHealth = {
   ok: null, // true / false / null
   reason: null, // "network", "backend-status-500", ...
@@ -24,7 +25,7 @@ async function runHealthCheck() {
   try {
     // Таймаут для health check, щоб не чекати вічно, якщо сервер завис
     const controller = new AbortController();
-    const timeoutId = setTimeout(() => controller.abort(), 10000); // 2 сек макс
+    const timeoutId = setTimeout(() => controller.abort(), 10000); // 10 сек макс
 
     const res = await fetch("http://127.0.0.1:3000/health", {
       method: "GET",
@@ -168,15 +169,52 @@ chrome.commands.onCommand.addListener(async (command) => {
   }
 });
 
-// --- Обробка повідомлень від Popup (майбутнього) ---
+// --- Обробка повідомлень від Popup (GET_STATUS + Dictation) ---
 
 chrome.runtime.onMessage.addListener((message, sender, sendResponse) => {
   if (message?.type === "GOLOS_GET_STATUS") {
-    // Використовуємо IIFE (Immediately Invoked Function Expression) для async всередині sync
+    // async всередині sync
     (async () => {
       const health = await getHealthStatus({ force: message.force === true });
       sendResponse(health);
     })();
     return true; // Тримаємо канал відкритим для асинхронної відповіді
+  }
+
+  // Запуск / зупинка диктування з popup
+  if (
+    message?.type === "GOLOS_START_DICTATION" ||
+    message?.type === "GOLOS_STOP_DICTATION"
+  ) {
+    (async () => {
+      try {
+        const tabs = await chrome.tabs.query({
+          active: true,
+          currentWindow: true,
+        });
+        const tab = tabs[0];
+
+        if (!tab?.id) {
+          console.warn("[Golos] Dictation: no active tab");
+          sendResponse({ ok: false, reason: "no-active-tab" });
+          return;
+        }
+
+        await chrome.tabs.sendMessage(tab.id, {
+          type: message.type,
+        });
+
+        sendResponse({ ok: true });
+      } catch (err) {
+        console.error("[Golos] Dictation forward error:", err);
+        sendResponse({
+          ok: false,
+          reason: "forward-error",
+          detail: err.message || String(err),
+        });
+      }
+    })();
+
+    return true;
   }
 });

@@ -3,7 +3,7 @@
   "name": "Golos – debug",
   "version": "0.0.4",
   "description": "Alt+Shift+G: прочитати текст з активного поля і замінити його",
-  "permissions": ["activeTab"],
+  "permissions": ["activeTab", "storage"],
   "host_permissions": ["<all_urls>"],
   "background": {
     "service_worker": "background.js"

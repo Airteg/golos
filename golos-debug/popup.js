@@ -76,4 +76,48 @@ document.addEventListener("DOMContentLoaded", () => {
     const value = e.target.value;
     saveMode(value);
   });
+
+  // --- Dictation UI ---
+
+  let dictationActive = false;
+  const dictBtn = document.getElementById("dictation-toggle");
+  const dictStatus = document.getElementById("dictation-status");
+
+  function updateDictationUI() {
+    if (!dictBtn || !dictStatus) return;
+
+    if (dictationActive) {
+      dictBtn.textContent = "⏹ Зупинити диктування";
+      dictStatus.textContent = "Слухаю… Активне поле на сторінці.";
+    } else {
+      dictBtn.textContent = "🎙 Почати диктування";
+      dictStatus.textContent = "";
+    }
+  }
+
+  dictBtn.addEventListener("click", () => {
+    const type = dictationActive
+      ? "GOLOS_STOP_DICTATION"
+      : "GOLOS_START_DICTATION";
+
+    chrome.runtime.sendMessage({ type }, (response) => {
+      if (chrome.runtime.lastError) {
+        console.warn(
+          "[Golos popup] Dictation sendMessage error:",
+          chrome.runtime.lastError.message
+        );
+        return;
+      }
+
+      if (!response || response.ok === false) {
+        console.warn("[Golos popup] Dictation response error:", response);
+        return;
+      }
+
+      dictationActive = !dictationActive;
+      updateDictationUI();
+    });
+  });
+
+  updateDictationUI();
 });

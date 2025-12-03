@@ -60,6 +60,11 @@
         font-size: 12px;
         cursor: pointer;
       }
+
+      #dictation-status {
+        font-size: 11px;
+        color: #666;
+      }
     </style>
   </head>
   <body>
@@ -80,6 +85,11 @@
     </select>
 
     <button id="refresh">Оновити статус</button>
+
+    <div class="row">
+      <button id="dictation-toggle">🎙 Почати диктування</button>
+      <span id="dictation-status"></span>
+    </div>
 
     <script src="popup.js"></script>
   </body>
