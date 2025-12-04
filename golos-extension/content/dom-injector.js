@@ -6,32 +6,38 @@ export class GolosWidget {
     this.statusDot = null;
     this.statusText = null;
     this.contentArea = null;
+    this.closeBtn = null; // НОВЕ
     this._isMounted = false;
+    this.onStopCallback = null; // НОВЕ: функція зворотного виклику
+  }
+
+  // Метод для підписки на клік (викличемо його в content.js)
+  onStopClick(callback) {
+    this.onStopCallback = callback;
   }
 
   mount() {
     if (this._isMounted) return;
 
-    // 1. Створюємо "тіньовий" контейнер
     this.host = document.createElement("div");
     this.host.id = "golos-shadow-host";
     this.shadow = this.host.attachShadow({ mode: "open" });
 
-    // 2. Вставляємо стилі
     const linkElem = document.createElement("link");
     linkElem.setAttribute("rel", "stylesheet");
     linkElem.setAttribute("href", chrome.runtime.getURL("assets/styles.css"));
     this.shadow.appendChild(linkElem);
 
-    // 3. Вставляємо HTML
     const wrapper = document.createElement("div");
     wrapper.className = "golos-widget golos-hidden";
+    // Кнопка .golos-close
     wrapper.innerHTML = `
       <div class="golos-header">
         <div class="golos-status">
           <div class="golos-dot"></div>
           <span class="golos-status-text">Golos</span>
         </div>
+        <div class="golos-close" style="cursor: pointer; padding: 4px; font-weight: bold;">✖</div>
       </div>
       <div class="golos-content">
         <span class="golos-placeholder">Говоріть...</span>
@@ -39,13 +45,17 @@ export class GolosWidget {
     `;
     this.shadow.appendChild(wrapper);
 
-    // 4. Зберігаємо посилання на елементи
     this.root = wrapper;
     this.statusDot = wrapper.querySelector(".golos-dot");
     this.statusText = wrapper.querySelector(".golos-status-text");
     this.contentArea = wrapper.querySelector(".golos-content");
+    this.closeBtn = wrapper.querySelector(".golos-close"); // НОВЕ
 
-    // 5. Додаємо в сторінку
+    // НОВЕ: Слухаємо клік
+    this.closeBtn.addEventListener("click", () => {
+      if (this.onStopCallback) this.onStopCallback();
+    });
+
     document.body.appendChild(this.host);
     this._isMounted = true;
   }
@@ -66,14 +76,11 @@ export class GolosWidget {
         '<span class="golos-placeholder">Говоріть...</span>';
       return;
     }
-    // Простий захист від XSS, хоча ми в Shadow DOM
     this.contentArea.textContent = text;
   }
 
   setStatusCode(code) {
-    // code: 'connecting' | 'listening' | 'processing' | 'idle'
-    this.statusDot.className = "golos-dot"; // скидання
-
+    this.statusDot.className = "golos-dot";
     switch (code) {
       case "listening":
         this.statusDot.classList.add("listening");

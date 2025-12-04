@@ -1,39 +1,52 @@
 (async () => {
   try {
-    // 1. Отримуємо правильні шляхи до файлів всередині розширення
     const srcMessaging = chrome.runtime.getURL("utils/messaging.js");
     const srcWidget = chrome.runtime.getURL("content/dom-injector.js");
-    console.log("%csrcMessaging:", "color: red;", srcMessaging);
-    console.log("%csrcWidget:", "color: red;", srcWidget);
+    const srcInput = chrome.runtime.getURL("content/input-simulator.js");
 
-    // 2. Динамічно імпортуємо їх
     const { MSG } = await import(srcMessaging);
     const { GolosWidget } = await import(srcWidget);
-    console.log("%cMSG:", "color: red;", MSG);
-    console.log("%cGolosWidget:", "color: red;", GolosWidget);
+    const { insertText, getActiveEditable } = await import(srcInput);
 
-    console.log(
-      "%c[Golos Host] Modules loaded via dynamic import",
-      "color: teal;"
-    );
-
-    // 3. Ініціалізуємо віджет
+    console.log("[Golos Host] All modules loaded");
     const widget = new GolosWidget();
 
-    // --- Слухаємо команди від Background ---
-    chrome.runtime.onMessage.addListener((message, sender, sendResponse) => {
-      // Команда "Показати віджет" (від хоткея Alt+Shift+G)
+    // Обробка кліку на хрестик
+    widget.onStopClick(() => {
+      console.log("[Golos Host] User clicked Stop");
+      chrome.runtime.sendMessage({ type: MSG.CMD_STOP_SESSION });
+      widget.hide();
+    });
+
+    chrome.runtime.onMessage.addListener((message) => {
       if (message.type === "CMD_ShowWidget") {
-        console.log("[Golos Host] Showing widget...");
-        widget.show();
+        const el = getActiveEditable();
+        if (el) {
+          widget.show();
+        } else {
+          console.warn("No editable element found");
+        }
       }
 
-      // Отримання тексту (заглушка для майбутнього)
+      if (message.type === MSG.EVENT_STATE_CHANGE) {
+        widget.setStatusCode(message.state);
+        // Якщо двигун зупинився (idle), ховаємо віджет
+        if (message.state === "idle") {
+          setTimeout(() => widget.hide(), 500);
+        }
+      }
+
       if (message.type === MSG.EVENT_TRANSCRIPT) {
         widget.updateText(message.text, message.isFinal);
+        if (message.isFinal) {
+          const el = getActiveEditable();
+          if (el) {
+            insertText(el, message.text);
+          }
+        }
       }
     });
   } catch (err) {
-    console.error("[Golos Host] Failed to load modules:", err);
+    console.error("[Golos Host] Error:", err);
   }
 })();
