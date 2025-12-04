@@ -62,6 +62,16 @@ chrome.runtime.onMessage.addListener((message, sender, sendResponse) => {
     message.type === MSG.EVENT_TRANSCRIPT ||
     message.type === MSG.EVENT_STATE_CHANGE
   ) {
+    // 1. СИНХРОНІЗАЦІЯ СТАТУСУ
+    if (message.type === MSG.EVENT_STATE_CHANGE) {
+      if (message.state === "listening") {
+        chrome.action.setBadgeText({ text: "ON" });
+        chrome.action.setBadgeBackgroundColor({ color: "#ef4444" });
+      } else if (message.state === "idle" || message.state === "error") {
+        // Якщо двигун зупинився сам -> знімаємо бейдж, щоб Toggle працював коректно
+        chrome.action.setBadgeText({ text: "" });
+      }
+    }
     // Двигун має повернути targetTabId, щоб ми знали, кому віддати текст
     const destTabId = message.targetTabId;
     if (destTabId) {

@@ -5,93 +5,81 @@
     <title>Golos</title>
     <style>
       body {
-        margin: 0;
-        padding: 10px;
-        font-family: system-ui, -apple-system, BlinkMacSystemFont, "Segoe UI",
-          sans-serif;
-        font-size: 13px;
-        min-width: 230px;
+        width: 200px;
+        padding: 16px;
+        font-family: system-ui, sans-serif;
+        text-align: center;
+        background: #f9f9f9;
+        color: #333;
       }
 
-      .row {
+      /* Велика кнопка Старт */
+      #big-mic-btn {
+        width: 80px;
+        height: 80px;
+        border-radius: 50%;
+        background: white;
+        border: 2px solid #eee;
+        font-size: 32px;
+        cursor: pointer;
         display: flex;
         align-items: center;
-        gap: 8px;
-        margin-bottom: 8px;
+        justify-content: center;
+        margin: 0 auto 16px auto;
+        box-shadow: 0 4px 12px rgba(0, 0, 0, 0.1);
+        transition: all 0.2s;
       }
 
-      .dot {
-        width: 10px;
-        height: 10px;
-        border-radius: 50%;
-        background: #aaa;
+      #big-mic-btn:hover {
+        transform: scale(1.05);
+        border-color: #ddd;
       }
 
-      .dot.ok {
-        background: #2ecc71;
-      }
-
-      .dot.bad {
-        background: #e74c3c;
-      }
-
-      #detail {
-        font-size: 11px;
-        color: #666;
-        white-space: pre-wrap;
-        margin-bottom: 8px;
-      }
-
-      label {
-        font-size: 12px;
-        display: block;
-        margin-bottom: 4px;
+      #big-mic-btn.active {
+        background: #ffecec;
+        border-color: #ff453a;
+        color: #ff453a;
+        box-shadow: 0 0 15px rgba(255, 69, 58, 0.3);
+        animation: pulse 1.5s infinite;
       }
 
       select {
         width: 100%;
-        font-size: 12px;
-        padding: 3px;
-        margin-bottom: 8px;
+        padding: 6px;
+        border-radius: 6px;
+        border: 1px solid #ddd;
+        font-size: 13px;
+        background: white;
       }
 
-      button {
-        padding: 4px 8px;
-        font-size: 12px;
-        cursor: pointer;
-      }
-
-      #dictation-status {
+      .hint {
         font-size: 11px;
-        color: #666;
+        color: #999;
+        margin-top: 12px;
+      }
+
+      @keyframes pulse {
+        0% {
+          box-shadow: 0 0 0 0 rgba(255, 69, 58, 0.4);
+        }
+        70% {
+          box-shadow: 0 0 0 10px rgba(255, 69, 58, 0);
+        }
+        100% {
+          box-shadow: 0 0 0 0 rgba(255, 69, 58, 0);
+        }
       }
     </style>
   </head>
   <body>
-    <button id="dictation-toggle">Відкрити панель диктування</button>
+    <button id="big-mic-btn">🎙</button>
 
-    <!-- <div class="row">
-      <div id="status-dot" class="dot"></div>
-      <div id="status-text">Перевірка статусу…</div>
-    </div>
-
-    <div id="detail"></div>
-
-    <label for="mode-select">Режим обробки:</label>
-    <select id="mode-select">
-      <option value="uk-clean">🇺🇦 Українська — виправити текст</option>
-      <option value="en-clean">🇬🇧 English — fix grammar</option>
-      <option value="uk-en-mix">
-        🇺🇦+🇬🇧 Українська з вставками англійською
-      </option>
+    <select id="lang-select">
+      <option value="uk-UA">🇺🇦 Українська</option>
+      <option value="en-US">🇺🇸 English</option>
     </select>
 
-    <button id="refresh">Оновити статус</button>
-
-    <div class="row">
-      <button id="dictation-toggle">🎙 Почати диктування</button>
-      <span id="dictation-status"></span>
-    </div> -->
+    <div class="hint">Alt + Shift + G</div>
 
     <script src="popup.js"></script>
   </body>
