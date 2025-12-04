@@ -1,0 +1,40 @@
+{
+  "manifest_version": 3,
+  "name": "Golos 2.0 (Satellite)",
+  "version": "0.1.0",
+  "description": "Voice-to-Text Satellite Architecture",
+  "permissions": ["activeTab", "storage", "tabs", "scripting"],
+  "host_permissions": ["<all_urls>"],
+  "background": {
+    "service_worker": "background/service-worker.js",
+    "type": "module"
+  },
+  "action": {
+    "default_title": "Golos"
+  },
+  "commands": {
+    "golos-process-selection": {
+      "suggested_key": { "default": "Alt+Shift+G" },
+      "description": "Start Dictation"
+    }
+  },
+  "content_scripts": [
+    {
+      "matches": ["<all_urls>"],
+      "js": ["content/content.js"],
+      "run_at": "document_idle"
+    }
+  ],
+  "web_accessible_resources": [
+    {
+      "resources": [
+        "engine/engine.html",
+        "assets/styles.css",
+        "assets/*",
+        "utils/messaging.js",
+        "content/dom-injector.js"
+      ],
+      "matches": ["<all_urls>"]
+    }
+  ]
+}
