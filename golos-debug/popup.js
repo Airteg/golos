@@ -63,61 +63,41 @@ function saveMode(value) {
 }
 
 document.addEventListener("DOMContentLoaded", () => {
-  requestStatus(false);
-  loadMode();
+  const btn = document.getElementById("dictation-toggle");
+  if (!btn) return;
 
-  const btn = document.getElementById("refresh");
+  btn.textContent = "Відкрити панель диктування";
+
   btn.addEventListener("click", () => {
-    requestStatus(true);
-  });
+    // 1. Знаходимо активну вкладку в поточному вікні (де ти натиснув іконку)
+    chrome.tabs.query({ active: true, currentWindow: true }, (tabs) => {
+      const tab = tabs[0];
 
-  const select = document.getElementById("mode-select");
-  select.addEventListener("change", (e) => {
-    const value = e.target.value;
-    saveMode(value);
-  });
-
-  // --- Dictation UI ---
-
-  let dictationActive = false;
-  const dictBtn = document.getElementById("dictation-toggle");
-  const dictStatus = document.getElementById("dictation-status");
-
-  function updateDictationUI() {
-    if (!dictBtn || !dictStatus) return;
-
-    if (dictationActive) {
-      dictBtn.textContent = "⏹ Зупинити диктування";
-      dictStatus.textContent = "Слухаю… Активне поле на сторінці.";
-    } else {
-      dictBtn.textContent = "🎙 Почати диктування";
-      dictStatus.textContent = "";
-    }
-  }
-
-  dictBtn.addEventListener("click", () => {
-    const type = dictationActive
-      ? "GOLOS_STOP_DICTATION"
-      : "GOLOS_START_DICTATION";
-
-    chrome.runtime.sendMessage({ type }, (response) => {
-      if (chrome.runtime.lastError) {
-        console.warn(
-          "[Golos popup] Dictation sendMessage error:",
-          chrome.runtime.lastError.message
+      if (tab && typeof tab.id === "number") {
+        // 2. Кажемо background’у: ось цільова вкладка для диктування
+        chrome.runtime.sendMessage(
+          { type: "GOLOS_SET_DICTATION_TARGET", tabId: tab.id },
+          () => {
+            // 3. Відкриваємо плаваючу панель
+            chrome.windows.create({
+              url: "dictation.html",
+              type: "popup",
+              width: 260,
+              height: 170,
+              focused: true,
+            });
+          }
         );
-        return;
+      } else {
+        // Фолбек: якщо з якоїсь причини вкладку не знайшли — хоча б відкриємо панель
+        chrome.windows.create({
+          url: "dictation.html",
+          type: "popup",
+          width: 260,
+          height: 170,
+          focused: true,
+        });
       }
-
-      if (!response || response.ok === false) {
-        console.warn("[Golos popup] Dictation response error:", response);
-        return;
-      }
-
-      dictationActive = !dictationActive;
-      updateDictationUI();
     });
   });
-
-  updateDictationUI();
 });

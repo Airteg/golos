@@ -3,6 +3,7 @@
 // background.js — Фінальна версія (Health Check + Clean Async)
 
 const HEALTH_MAX_AGE_MS = 15_000; // 15 секунд
+let dictationTargetTabId = null;
 
 function getCurrentMode() {
   return new Promise((resolve) => {
@@ -172,35 +173,44 @@ chrome.commands.onCommand.addListener(async (command) => {
 // --- Обробка повідомлень від Popup (GET_STATUS + Dictation) ---
 
 chrome.runtime.onMessage.addListener((message, sender, sendResponse) => {
+  // Запит статусу /health для popup
   if (message?.type === "GOLOS_GET_STATUS") {
-    // async всередині sync
     (async () => {
       const health = await getHealthStatus({ force: message.force === true });
       sendResponse(health);
     })();
-    return true; // Тримаємо канал відкритим для асинхронної відповіді
+    return true; // асинхронна відповідь
   }
 
-  // Запуск / зупинка диктування з popup
+  // Встановити цільову вкладку для диктування
+  if (message?.type === "GOLOS_SET_DICTATION_TARGET") {
+    if (typeof message.tabId === "number") {
+      dictationTargetTabId = message.tabId;
+      console.log("[Golos] Dictation target tab set to", dictationTargetTabId);
+      sendResponse({ ok: true });
+    } else {
+      console.warn("[Golos] Invalid dictation target tabId", message.tabId);
+      dictationTargetTabId = null;
+      sendResponse({ ok: false, reason: "invalid-tab-id" });
+    }
+    return true;
+  }
+
+  // Запуск / зупинка диктування з панелі (dictation.html)
   if (
     message?.type === "GOLOS_START_DICTATION" ||
     message?.type === "GOLOS_STOP_DICTATION"
   ) {
     (async () => {
       try {
-        const tabs = await chrome.tabs.query({
-          active: true,
-          currentWindow: true,
-        });
-        const tab = tabs[0];
-
-        if (!tab?.id) {
-          console.warn("[Golos] Dictation: no active tab");
-          sendResponse({ ok: false, reason: "no-active-tab" });
+        const targetTabId = dictationTargetTabId;
+        if (!targetTabId) {
+          console.warn("[Golos] Dictation: no target tab set");
+          sendResponse({ ok: false, reason: "no-target-tab" });
           return;
         }
 
-        await chrome.tabs.sendMessage(tab.id, {
+        await chrome.tabs.sendMessage(targetTabId, {
           type: message.type,
         });
 
