@@ -10,13 +10,17 @@
     "type": "module"
   },
   "action": {
-    "default_title": "Golos"
+    "default_title": "Golos: Click to Dictate"
   },
   "commands": {
     "golos-process-selection": {
       "suggested_key": { "default": "Alt+Shift+G" },
       "description": "Start Dictation"
     }
+  },
+  "options_ui": {
+    "page": "options/options.html",
+    "open_in_tab": false
   },
   "content_scripts": [
     {

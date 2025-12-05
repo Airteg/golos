@@ -1,0 +1,787 @@
+D:\ProjectsVVV\ChromeExtension\golos
+--------------------------------------------------
+D:\ProjectsVVV\ChromeExtension\golos\golos-extension
+--------------------------------------------------
+D:\ProjectsVVV\ChromeExtension\golos\golos-extension\assets
+--------------------------------------------------
+D:\ProjectsVVV\ChromeExtension\golos\golos-extension\background
+--------------------------------------------------
+D:\ProjectsVVV\ChromeExtension\golos\golos-extension\background\service-worker.js
+--------------------------------------------------
+import { MSG } from "../utils/messaging.js";
+
+console.log("[Golos BG] Router v2.0 Started");
+
+let engineTabId = null;
+
+// --- 1. Керування вкладкою-двигуном ---
+
+async function ensureEngineTab() {
+  const engineUrl = chrome.runtime.getURL("engine/engine.html");
+  try {
+    const tabs = await chrome.tabs.query({ url: engineUrl });
+    if (tabs.length > 0) {
+      engineTabId = tabs[0].id;
+      return engineTabId;
+    }
+    const newTab = await chrome.tabs.create({
+      url: engineUrl,
+      pinned: true,
+      active: false,
+    });
+    engineTabId = newTab.id;
+    return engineTabId;
+  } catch (e) {
+    console.error("[Golos BG] Engine error:", e);
+    return null;
+  }
+}
+
+// --- 2. Візуалізація стану (Іконка + Badge) ---
+
+function setVisualState(state) {
+  // state: 'idle' | 'listening' | 'error'
+
+  if (state === "listening") {
+    chrome.action.setBadgeText({ text: "ON" });
+    chrome.action.setBadgeBackgroundColor({ color: "#ef4444" });
+    // Якщо у тебе будуть іконки:
+    // chrome.action.setIcon({ path: "assets/icon-red.png" });
+  } else {
+    chrome.action.setBadgeText({ text: "" }); // Прибираємо текст
+    // chrome.action.setIcon({ path: "assets/icon-gray.png" });
+  }
+}
+
+// --- 3. Головний перемикач (Toggle) ---
+
+async function toggleSession() {
+  // Перевіряємо статус по бейджу (це наше джерело правди)
+  const badgeText = await chrome.action.getBadgeText({});
+  const isRunning = badgeText === "ON";
+
+  if (isRunning) {
+    // === STOP ===
+    console.log("[Golos BG] Action: STOP");
+    if (engineTabId) {
+      chrome.tabs.sendMessage(engineTabId, { type: MSG.CMD_STOP_SESSION });
+      setVisualState("idle");
+    }
+  } else {
+    // === START ===
+    console.log("[Golos BG] Action: START");
+
+    // 1. Шукаємо активну вкладку (куди писати)
+    const tabs = await chrome.tabs.query({
+      active: true,
+      lastFocusedWindow: true,
+    });
+    const activeTab = tabs[0];
+
+    // Перевірка: чи це не службова сторінка (chrome://)
+    if (!activeTab || !activeTab.id || activeTab.url.startsWith("chrome://")) {
+      console.warn("Cannot dictate on this tab");
+      // Можна блимнути бейджем "ERR"
+      chrome.action.setBadgeText({ text: "ERR" });
+      setTimeout(() => chrome.action.setBadgeText({ text: "" }), 1500);
+      return;
+    }
+
+    // 2. Показуємо віджет
+    chrome.tabs
+      .sendMessage(activeTab.id, { type: "CMD_ShowWidget" })
+      .catch(() => {
+        console.warn("Widget not ready. Please refresh the page.");
+      });
+
+    // 3. Запускаємо двигун
+    ensureEngineTab().then((engId) => {
+      if (!engId) return;
+      chrome.tabs.sendMessage(engId, {
+        type: MSG.CMD_START_SESSION,
+        targetTabId: activeTab.id,
+      });
+      setVisualState("listening");
+    });
+  }
+}
+
+// --- 4. Listeners ---
+
+// Клік по іконці (ЛКМ)
+chrome.action.onClicked.addListener((tab) => {
+  toggleSession();
+});
+
+// Гаряча клавіша
+chrome.commands.onCommand.addListener((command) => {
+  if (command === "golos-process-selection") {
+    toggleSession();
+  }
+});
+
+// Слухач повідомлень
+chrome.runtime.onMessage.addListener((message, sender, sendResponse) => {
+  // Якщо віджет просить зупинитись (хрестик)
+  if (message.type === MSG.CMD_STOP_SESSION) {
+    if (engineTabId) {
+      chrome.tabs.sendMessage(engineTabId, { type: MSG.CMD_STOP_SESSION });
+      setVisualState("idle");
+    }
+  }
+
+  // Транзит даних (Engine <-> Content)
+  if (
+    message.type === MSG.EVENT_TRANSCRIPT ||
+    message.type === MSG.EVENT_STATE_CHANGE
+  ) {
+    // Синхронізація UI при авто-стопі
+    if (message.type === MSG.EVENT_STATE_CHANGE) {
+      setVisualState(message.state);
+    }
+
+    const destTabId = message.targetTabId;
+    if (destTabId) {
+      chrome.tabs.sendMessage(destTabId, message).catch(() => {});
+    }
+  }
+});
+
+// Старт
+chrome.runtime.onInstalled.addListener(() => ensureEngineTab());
+chrome.runtime.onStartup.addListener(() => ensureEngineTab());
+--------------------------------------------------
+D:\ProjectsVVV\ChromeExtension\golos\golos-extension\content
+--------------------------------------------------
+D:\ProjectsVVV\ChromeExtension\golos\golos-extension\content\content.js
+--------------------------------------------------
+(async () => {
+  try {
+    const srcMessaging = chrome.runtime.getURL("utils/messaging.js");
+    const srcWidget = chrome.runtime.getURL("content/dom-injector.js");
+    const srcInput = chrome.runtime.getURL("content/input-simulator.js");
+
+    const { MSG } = await import(srcMessaging);
+    const { GolosWidget } = await import(srcWidget);
+    const { insertText, getActiveEditable } = await import(srcInput);
+
+    console.log("[Golos Host] All modules loaded");
+    const widget = new GolosWidget();
+
+    // Обробка кліку на хрестик
+    widget.onStopClick(() => {
+      console.log("[Golos Host] User clicked Stop");
+      chrome.runtime.sendMessage({ type: MSG.CMD_STOP_SESSION });
+      widget.hide();
+    });
+
+    chrome.runtime.onMessage.addListener((message) => {
+      if (message.type === "CMD_ShowWidget") {
+        const el = getActiveEditable();
+        if (el) {
+          widget.show();
+        } else {
+          console.warn("No editable element found");
+        }
+      }
+
+      if (message.type === MSG.EVENT_STATE_CHANGE) {
+        widget.setStatusCode(message.state);
+        // Якщо двигун зупинився (idle), ховаємо віджет
+        if (message.state === "idle") {
+          setTimeout(() => widget.hide(), 500);
+        }
+      }
+
+      if (message.type === MSG.EVENT_TRANSCRIPT) {
+        widget.updateText(message.text, message.isFinal);
+        if (message.isFinal) {
+          const el = getActiveEditable();
+          if (el) {
+            insertText(el, message.text);
+          }
+        }
+      }
+    });
+  } catch (err) {
+    console.error("[Golos Host] Error:", err);
+  }
+})();
+--------------------------------------------------
+D:\ProjectsVVV\ChromeExtension\golos\golos-extension\content\dom-injector.js
+--------------------------------------------------
+export class GolosWidget {
+  constructor() {
+    this.host = null;
+    this.shadow = null;
+    this.root = null;
+    this.statusDot = null;
+    this.statusText = null;
+    this.contentArea = null;
+    this.closeBtn = null; // НОВЕ
+    this._isMounted = false;
+    this.onStopCallback = null; // НОВЕ: функція зворотного виклику
+  }
+
+  // Метод для підписки на клік (викличемо його в content.js)
+  onStopClick(callback) {
+    this.onStopCallback = callback;
+  }
+
+  mount() {
+    if (this._isMounted) return;
+
+    this.host = document.createElement("div");
+    this.host.id = "golos-shadow-host";
+    this.shadow = this.host.attachShadow({ mode: "open" });
+
+    const linkElem = document.createElement("link");
+    linkElem.setAttribute("rel", "stylesheet");
+    linkElem.setAttribute("href", chrome.runtime.getURL("assets/styles.css"));
+    this.shadow.appendChild(linkElem);
+
+    const wrapper = document.createElement("div");
+    wrapper.className = "golos-widget golos-hidden";
+    // Кнопка .golos-close
+    wrapper.innerHTML = `
+      <div class="golos-header">
+        <div class="golos-status">
+          <div class="golos-dot"></div>
+          <span class="golos-status-text">Golos</span>
+        </div>
+        <div class="golos-close" style="cursor: pointer; padding: 4px; font-weight: bold;">✖</div>
+      </div>
+      <div class="golos-content">
+        <span class="golos-placeholder">Говоріть...</span>
+      </div>
+    `;
+    this.shadow.appendChild(wrapper);
+
+    this.root = wrapper;
+    this.statusDot = wrapper.querySelector(".golos-dot");
+    this.statusText = wrapper.querySelector(".golos-status-text");
+    this.contentArea = wrapper.querySelector(".golos-content");
+    this.closeBtn = wrapper.querySelector(".golos-close"); // НОВЕ
+
+    // НОВЕ: Слухаємо клік
+    this.closeBtn.addEventListener("click", () => {
+      if (this.onStopCallback) this.onStopCallback();
+    });
+
+    document.body.appendChild(this.host);
+    this._isMounted = true;
+  }
+
+  show() {
+    if (!this._isMounted) this.mount();
+    this.root.classList.remove("golos-hidden");
+    this.setStatusCode("connecting");
+  }
+
+  hide() {
+    if (this.root) this.root.classList.add("golos-hidden");
+  }
+
+  updateText(text, isFinal) {
+    if (!text) {
+      this.contentArea.innerHTML =
+        '<span class="golos-placeholder">Говоріть...</span>';
+      return;
+    }
+    this.contentArea.textContent = text;
+  }
+
+  setStatusCode(code) {
+    this.statusDot.className = "golos-dot";
+    switch (code) {
+      case "listening":
+        this.statusDot.classList.add("listening");
+        this.statusText.textContent = "Слухаю...";
+        break;
+      case "processing":
+        this.statusDot.classList.add("processing");
+        this.statusText.textContent = "Обробка...";
+        break;
+      case "connecting":
+        this.statusText.textContent = "Запуск...";
+        break;
+      default:
+        this.statusText.textContent = "Golos";
+    }
+  }
+}
+--------------------------------------------------
+D:\ProjectsVVV\ChromeExtension\golos\golos-extension\content\input-simulator.js
+--------------------------------------------------
+export function getActiveEditable() {
+  const el = document.activeElement;
+  if (!el) return null;
+
+  const isInput =
+    el instanceof HTMLInputElement || el instanceof HTMLTextAreaElement;
+  const isContentEditable = el.isContentEditable;
+
+  if (isInput || isContentEditable) {
+    return el;
+  }
+  return null;
+}
+
+export function insertText(el, text) {
+  if (!el || !text) return;
+
+  const isInput =
+    el instanceof HTMLInputElement || el instanceof HTMLTextAreaElement;
+
+  if (isInput) {
+    const start = el.selectionStart || 0;
+    const end = el.selectionEnd || 0;
+    const originalValue = el.value;
+
+    const prefix = originalValue.substring(0, start);
+    const suffix = originalValue.substring(end);
+
+    const spacer = prefix.length > 0 && !prefix.endsWith(" ") ? " " : "";
+
+    el.value = prefix + spacer + text + suffix;
+
+    const newCursorPos = start + spacer.length + text.length;
+    el.selectionStart = el.selectionEnd = newCursorPos;
+
+    el.dispatchEvent(new Event("input", { bubbles: true }));
+    el.dispatchEvent(new Event("change", { bubbles: true }));
+  } else {
+    // Для contenteditable
+    document.execCommand("insertText", false, text);
+  }
+  console.log("[Golos Input] Inserted:", text);
+}
+--------------------------------------------------
+D:\ProjectsVVV\ChromeExtension\golos\golos-extension\engine
+--------------------------------------------------
+D:\ProjectsVVV\ChromeExtension\golos\golos-extension\engine\engine.js
+--------------------------------------------------
+import { MSG } from "../utils/messaging.js";
+
+console.log("[Golos Engine] Ready to listen.");
+
+let recognition = null; // SpeechRecognition instance
+let currentTargetTabId = null; // Tab ID to send transcripts to
+let silenceTimer = null; // Timer for silence detection
+const SILENCE_TIMEOUT_MS = 20000; // 20 seconds
+
+// --- СЛОВНИК МАКРОСІВ ---
+const MACROS = {
+  кома: ",",
+  крапка: ".",
+  "знак питання": "?",
+  "знак оклику": "!",
+  дефіс: "-",
+  двокрапка: ":",
+  тире: " —",
+  "новий рядок": "\n",
+  абзац: "\n\n",
+  "дужка відкривається": "(",
+  "дужка закривається": ")",
+  смайлик: "🙂",
+};
+
+function applyMacros(text) {
+  if (!text) return text;
+
+  let processed = text;
+
+  // 1. Заміна слів на символи
+  for (const [key, value] of Object.entries(MACROS)) {
+    const regex = new RegExp(`(^|\\s)${key}(?=$|\\s|[.,?!])`, "gi");
+    processed = processed.replace(regex, (match, prefix) => {
+      // Якщо це розділовий знак, ми не хочемо пробіл перед ним (окрім дужки відкриття)
+      if ([".", ",", "?", "!", ":", ")"].includes(value)) {
+        return value;
+      }
+      return prefix + value;
+    });
+  }
+
+  // 2. Чистка пробілів (FIX для дужок)
+
+  // Прибрати пробіли ПЕРЕД: . , ! ? : )
+  processed = processed.replace(/\s+([.,?!:);])/g, "$1");
+
+  // Прибрати пробіли ПІСЛЯ: (
+  processed = processed.replace(/(\()\s+/g, "$1");
+
+  // Додати пробіл ПІСЛЯ коми/крапки, якщо його немає (наприклад "привіт,як")
+  processed = processed.replace(/([.,?!:;])(?=[^\s])/g, "$1 ");
+
+  return processed;
+}
+// --- ІНІЦІАЛІЗАЦІЯ РОЗПІЗНАВАННЯ ---
+async function initRecognition() {
+  const SpeechRecognition =
+    window.SpeechRecognition || window.webkitSpeechRecognition;
+  if (!SpeechRecognition) return null;
+
+  const { golosLang } = await chrome.storage.sync.get({ golosLang: "uk-UA" });
+  console.log(`[Golos Engine] Lang: ${golosLang}`);
+
+  const rec = new SpeechRecognition();
+  rec.continuous = true;
+  rec.interimResults = true;
+  rec.lang = golosLang;
+
+  rec.onstart = () => {
+    console.log("[Golos Engine] ON");
+    sendState("listening");
+    resetSilenceTimer();
+  };
+
+  rec.onend = () => {
+    console.log("[Golos Engine] OFF");
+    sendState("idle");
+    clearTimeout(silenceTimer);
+  };
+
+  rec.onresult = (event) => {
+    resetSilenceTimer();
+
+    let interim = "";
+    let final = "";
+
+    for (let i = event.resultIndex; i < event.results.length; i++) {
+      const res = event.results[i];
+      if (res.isFinal) {
+        final += res[0].transcript;
+      } else {
+        interim += res[0].transcript;
+      }
+    }
+
+    // ЗАСТОСОВУЄМО МАКРОС ТІЛЬКИ ДО ФІНАЛЬНОГО ТЕКСТУ
+    if (final) {
+      final = applyMacros(final);
+      // Капіталізація першої літери фінального тексту
+      final = final.charAt(0).toUpperCase() + final.slice(1);
+    }
+
+    if (currentTargetTabId) {
+      chrome.runtime.sendMessage({
+        type: MSG.EVENT_TRANSCRIPT,
+        text: final || interim,
+        isFinal: !!final,
+        targetTabId: currentTargetTabId,
+      });
+    }
+  };
+
+  rec.onerror = (e) => {
+    if (e.error !== "no-speech") sendState("error");
+  };
+  return rec;
+}
+// --- ТАЙМЕР БЕЗДІЯЛЬНОСТІ ---
+function resetSilenceTimer() {
+  clearTimeout(silenceTimer);
+  silenceTimer = setTimeout(() => {
+    console.log("[Golos Engine] Silence stop.");
+    stopSession();
+  }, SILENCE_TIMEOUT_MS);
+}
+// --- ЗУПИНКА СЕСІЇ ---
+function stopSession() {
+  if (recognition) recognition.stop();
+  updateStatusUI("Idle");
+}
+// --- ВІДПРАВКА СТАНУ ---
+function sendState(state) {
+  if (currentTargetTabId) {
+    chrome.runtime.sendMessage({
+      type: MSG.EVENT_STATE_CHANGE,
+      state: state,
+      targetTabId: currentTargetTabId,
+    });
+  }
+}
+// --- ОБРОБКА ПОВІДОМЛЕНЬ ---
+chrome.runtime.onMessage.addListener((message) => {
+  if (message.type === MSG.CMD_START_SESSION) {
+    currentTargetTabId = message.targetTabId;
+    if (recognition) recognition.abort();
+    initRecognition().then((rec) => {
+      recognition = rec;
+      try {
+        recognition.start();
+        updateStatusUI(`Listening ${currentTargetTabId}`);
+      } catch (e) {}
+    });
+    return true;
+  }
+  if (message.type === MSG.CMD_STOP_SESSION) stopSession();
+});
+// --- UI СТАТУС ---
+function updateStatusUI(text) {
+  const el = document.getElementById("status");
+  if (el) el.textContent = text;
+}
+--------------------------------------------------
+D:\ProjectsVVV\ChromeExtension\golos\golos-extension\golos-api
+--------------------------------------------------
+D:\ProjectsVVV\ChromeExtension\golos\golos-extension\golos-api\index.js
+--------------------------------------------------
+import "dotenv/config";
+import express from "express";
+import cors from "cors";
+import OpenAI from "openai";
+
+const app = express();
+const PORT = 3000;
+
+// Ініціалізація клієнта OpenAI
+const openai = new OpenAI({
+  apiKey: process.env.OPENAI_API_KEY,
+});
+
+app.use(cors());
+app.use(express.json());
+
+function getInstructions(mode) {
+  switch (mode) {
+    case "uk-clean":
+      return (
+        "Ти коректор української мови. " +
+        "Виправ орфографію, пунктуацію та базову граматику. " +
+        "Зберігай зміст. НЕ перекладай англійські слова й не змінюй їх."
+      );
+    case "en-clean":
+      return (
+        "You are an English proofreader. " +
+        "Fix spelling, punctuation and basic grammar, but do not change the meaning."
+      );
+    case "uk-en-mix":
+      return (
+        "Ти коректор змішаного тексту українською з вставками англійською. " +
+        "Виправ лише українську частину тексту. " +
+        "Англійські слова і фрази не перекладай і не змінюй."
+      );
+    default:
+      return (
+        "You are a careful text cleaner. " +
+        "Fix obvious mistakes but preserve the original meaning and style as much as possible."
+      );
+  }
+}
+
+/**
+ * Легкий health-check для бекенда та ключа OpenAI.
+ *
+ * GET /health
+ *
+ * Відповідь:
+ *  - 200 { ok: true, model, latencyMs }
+ *  - 500 { ok: false, stage: "env" | "openai", error }
+ */
+app.get("/health", async (req, res) => {
+  if (!process.env.OPENAI_API_KEY) {
+    return res.status(500).json({
+      ok: false,
+      stage: "env",
+      error: "OPENAI_API_KEY is not set",
+    });
+  }
+
+  try {
+    const started = Date.now();
+
+    const response = await openai.responses.create({
+      model: "gpt-4o-mini",
+      input: "ping",
+    });
+
+    const latencyMs = Date.now() - started;
+    const text = (response.output_text || "").trim();
+
+    return res.json({
+      ok: true,
+      stage: "openai",
+      model: "gpt-4o-mini",
+      latencyMs,
+      sample: text,
+    });
+  } catch (err) {
+    console.error("[Golos] /health OpenAI error:", err);
+    return res.status(500).json({
+      ok: false,
+      stage: "openai",
+      error: err.message || String(err),
+    });
+  }
+});
+
+app.post("/process", async (req, res) => {
+  const { mode = "uk-clean", text } = req.body || {};
+
+  if (typeof text !== "string" || !text.trim()) {
+    return res
+      .status(400)
+      .json({ error: "field 'text' (non-empty string) is required" });
+  }
+
+  if (!process.env.OPENAI_API_KEY) {
+    return res.status(500).json({ error: "OPENAI_API_KEY env var is not set" });
+  }
+
+  try {
+    const instructions = getInstructions(mode);
+
+    const response = await openai.responses.create({
+      model: "gpt-4o-mini",
+      input: text,
+      instructions,
+    });
+
+    const processedText = (response.output_text || "").trim() || text;
+
+    return res.json({ text: processedText });
+  } catch (err) {
+    console.error("[Golos] /process OpenAI error:", err);
+    return res.status(500).json({
+      error: "openai_error",
+      message: err.message || "Failed to process text with OpenAI",
+    });
+  }
+});
+
+app.listen(PORT, () => {
+  console.log(`golos-api listening on http://127.0.0.1:${PORT}`);
+});
+--------------------------------------------------
+D:\ProjectsVVV\ChromeExtension\golos\golos-extension\legacy
+--------------------------------------------------
+D:\ProjectsVVV\ChromeExtension\golos\golos-extension\legacy\dictation.js
+--------------------------------------------------
+let dictationActive = false;
+
+const btn = document.getElementById("toggle");
+const statusEl = document.getElementById("status");
+const liveEl = document.getElementById("live");
+
+function updateUI() {
+  if (dictationActive) {
+    btn.textContent = "⏹ Зупинити";
+    statusEl.textContent = "Слухаю…";
+  } else {
+    btn.textContent = "🎙 Почати диктування";
+    statusEl.textContent = "";
+    liveEl.textContent = "";
+  }
+}
+
+btn.addEventListener("click", () => {
+  const type = dictationActive
+    ? "GOLOS_STOP_DICTATION"
+    : "GOLOS_START_DICTATION";
+
+  chrome.runtime.sendMessage({ type }, (res) => {
+    dictationActive = !dictationActive;
+    updateUI();
+  });
+});
+
+updateUI();
+
+// Отримуємо текст від content-script
+chrome.runtime.onMessage.addListener((msg) => {
+  if (msg.type === "DICTATION_INTERIM") {
+    liveEl.textContent = msg.text;
+  }
+
+  if (msg.type === "DICTATION_FINAL") {
+    liveEl.textContent = msg.text;
+  }
+});
+--------------------------------------------------
+D:\ProjectsVVV\ChromeExtension\golos\golos-extension\options
+--------------------------------------------------
+D:\ProjectsVVV\ChromeExtension\golos\golos-extension\options\options.js
+--------------------------------------------------
+// options/options.js
+
+const langSelect = document.getElementById("lang");
+const saveBtn = document.getElementById("save");
+const statusSpan = document.getElementById("status");
+
+// 1. Відновлення налаштувань
+document.addEventListener("DOMContentLoaded", () => {
+  chrome.storage.sync.get({ golosLang: "uk-UA" }, (items) => {
+    langSelect.value = items.golosLang;
+  });
+});
+
+// 2. Збереження
+saveBtn.addEventListener("click", () => {
+  const lang = langSelect.value;
+
+  chrome.storage.sync.set({ golosLang: lang }, () => {
+    // Ефект "Збережено"
+    statusSpan.style.opacity = "1";
+    setTimeout(() => {
+      statusSpan.style.opacity = "0";
+    }, 1500);
+
+    console.log("[Golos Options] Saved:", lang);
+  });
+});
+--------------------------------------------------
+D:\ProjectsVVV\ChromeExtension\golos\golos-extension\popup
+--------------------------------------------------
+D:\ProjectsVVV\ChromeExtension\golos\golos-extension\popup\popup.js
+--------------------------------------------------
+document.addEventListener("DOMContentLoaded", async () => {
+  const langSelect = document.getElementById("lang-select");
+  const statusDot = document.getElementById("status-dot");
+  const statusText = document.getElementById("status-text");
+
+  // 1. Завантажуємо збережену мову (за замовчуванням uk-UA)
+  chrome.storage.sync.get({ golosLang: "uk-UA" }, (items) => {
+    langSelect.value = items.golosLang;
+  });
+
+  // 2. Зберігаємо при зміні
+  langSelect.addEventListener("change", () => {
+    const newVal = langSelect.value;
+    chrome.storage.sync.set({ golosLang: newVal }, () => {
+      console.log("Language saved:", newVal);
+      // Можна блимнути користувачу, що збережено
+    });
+  });
+
+  // 3. Перевіряємо, чи живий Engine
+  const engineUrl = chrome.runtime.getURL("engine/engine.html");
+  const tabs = await chrome.tabs.query({ url: engineUrl });
+
+  if (tabs.length > 0) {
+    statusDot.classList.add("ok");
+    statusText.textContent = "Engine Ready";
+  } else {
+    statusDot.classList.remove("ok");
+    statusText.textContent = "Engine Sleeping";
+  }
+});
+--------------------------------------------------
+D:\ProjectsVVV\ChromeExtension\golos\golos-extension\utils
+--------------------------------------------------
+D:\ProjectsVVV\ChromeExtension\golos\golos-extension\utils\messaging.js
+--------------------------------------------------
+export const MSG = {
+  // Host -> Router -> Engine
+  CMD_START_SESSION: "CMD_START_SESSION",
+  CMD_STOP_SESSION: "CMD_STOP_SESSION",
+
+  // Engine -> Router -> Host
+  EVENT_STATE_CHANGE: "EVENT_STATE_CHANGE", // connecting, listening, idle
+  EVENT_TRANSCRIPT: "EVENT_TRANSCRIPT", // text data
+  EVENT_ERROR: "EVENT_ERROR",
+};
+--------------------------------------------------
+D:\ProjectsVVV\ChromeExtension\golos\md
+--------------------------------------------------

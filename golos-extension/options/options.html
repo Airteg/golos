@@ -1,0 +1,84 @@
+<!DOCTYPE html>
+<html lang="uk">
+  <head>
+    <meta charset="UTF-8" />
+    <title>Golos Settings</title>
+    <style>
+      body {
+        font-family: system-ui, sans-serif;
+        padding: 20px;
+        max-width: 400px;
+        color: #333;
+      }
+      h1 {
+        font-size: 18px;
+        border-bottom: 1px solid #eee;
+        padding-bottom: 10px;
+      }
+      .group {
+        margin-bottom: 20px;
+      }
+      label {
+        display: block;
+        margin-bottom: 5px;
+        font-weight: 500;
+      }
+      select,
+      input {
+        width: 100%;
+        padding: 8px;
+        border: 1px solid #ccc;
+        border-radius: 4px;
+      }
+      .footer {
+        font-size: 12px;
+        color: #888;
+        margin-top: 30px;
+      }
+      button {
+        background: #2ecc71;
+        color: white;
+        border: none;
+        padding: 8px 16px;
+        border-radius: 4px;
+        cursor: pointer;
+      }
+      button:hover {
+        background: #27ae60;
+      }
+      #status {
+        margin-left: 10px;
+        color: #2ecc71;
+        opacity: 0;
+        transition: opacity 0.5s;
+      }
+    </style>
+  </head>
+  <body>
+    <h1>🦜 Golos Settings</h1>
+
+    <div class="group">
+      <label for="lang">Мова розпізнавання:</label>
+      <select id="lang">
+        <option value="uk-UA">🇺🇦 Українська</option>
+        <option value="en-US">🇺🇸 English (US)</option>
+        <option value="pl-PL">🇵🇱 Polski</option>
+        <option value="de-DE">🇩🇪 Deutsch</option>
+      </select>
+    </div>
+
+    <div class="group">
+      <label>
+        <input type="checkbox" id="gpt-enabled" disabled />
+        🤖 AI-корекція (Скоро буде)
+      </label>
+    </div>
+
+    <button id="save">Зберегти</button>
+    <span id="status">Збережено!</span>
+
+    <div class="footer">Golos v0.2.0 • Satellite Architecture</div>
+
+    <script src="options.js"></script>
+  </body>
+</html>

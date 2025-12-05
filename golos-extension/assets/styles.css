@@ -1,39 +1,55 @@
-/* Dark Glassmorphism Widget */
+:host {
+  /* Дефолтні кольори (Світла тема) */
+  --bg-color: rgba(255, 255, 255, 0.95);
+  --text-color: #333;
+  --border-color: rgba(0, 0, 0, 0.1);
+  --header-bg: rgba(0, 0, 0, 0.03);
+  --placeholder-color: #999;
+}
+
+/* Якщо у користувача в Windows/Mac стоїть Темна тема */
+@media (prefers-color-scheme: dark) {
+  :host {
+    --bg-color: rgba(30, 30, 30, 0.95);
+    --text-color: #e0e0e0;
+    --border-color: rgba(255, 255, 255, 0.1);
+    --header-bg: rgba(255, 255, 255, 0.05);
+    --placeholder-color: #666;
+  }
+}
+
 .golos-widget {
   position: fixed;
-  bottom: 20px;
-  right: 20px;
-  width: 260px;
-  /* Темний фон з ефектом розмиття */
-  background: rgba(30, 30, 30, 0.95);
+  bottom: 30px;
+  right: 30px;
+  width: 280px;
+  background: var(--bg-color); /* Використовуємо змінну */
   backdrop-filter: blur(10px);
-  box-shadow: 0 10px 30px rgba(0, 0, 0, 0.5);
-  border: 1px solid rgba(255, 255, 255, 0.1);
+  color: var(--text-color); /* Використовуємо змінну */
+  border: 1px solid var(--border-color);
+  box-shadow: 0 10px 30px rgba(0, 0, 0, 0.2);
   border-radius: 12px;
-  font-family: -apple-system, BlinkMacSystemFont, "Segoe UI", Roboto, sans-serif;
+  font-family: system-ui, sans-serif;
   z-index: 2147483647;
   display: flex;
   flex-direction: column;
-  overflow: hidden;
   transition:
-    opacity 0.2s ease,
-    transform 0.2s ease;
-  color: #fff; /* Білий текст */
+    opacity 0.2s,
+    transform 0.2s;
 }
 
 .golos-hidden {
   opacity: 0;
   pointer-events: none;
-  transform: translateY(10px) scale(0.95);
+  transform: translateY(10px);
 }
 
 .golos-header {
   display: flex;
-  align-items: center;
   justify-content: space-between;
   padding: 10px 14px;
-  background: rgba(255, 255, 255, 0.05); /* Ледь помітний розділювач */
-  border-bottom: 1px solid rgba(255, 255, 255, 0.1);
+  background: var(--header-bg);
+  border-bottom: 1px solid var(--border-color);
 }
 
 .golos-status {
@@ -42,71 +58,38 @@
   gap: 8px;
   font-size: 12px;
   font-weight: 600;
-  color: #ccc;
-  text-transform: uppercase;
-  letter-spacing: 0.5px;
 }
-
 .golos-dot {
   width: 8px;
   height: 8px;
   border-radius: 50%;
-  background-color: #555;
-  transition: background-color 0.3s;
+  background: #ccc;
 }
-
-/* Яскраві кольори для статусів */
 .golos-dot.listening {
-  background-color: #ff453a; /* iOS Red */
-  box-shadow: 0 0 10px rgba(255, 69, 58, 0.5);
-  animation: golos-pulse 1.5s infinite;
+  background: #ff453a;
+  box-shadow: 0 0 8px #ff453a;
+  animation: pulse 1.5s infinite;
 }
-
-.golos-dot.processing {
-  background-color: #ffd60a; /* iOS Yellow */
-}
-
-.golos-close {
-  color: #888;
-  transition: color 0.2s;
-}
-.golos-close:hover {
-  color: #fff;
-}
-
 .golos-content {
   padding: 14px;
-  font-size: 14px;
-  line-height: 1.5;
-  color: #e0e0e0;
-  min-height: 24px;
-  max-height: 150px;
-  overflow-y: auto;
+  min-height: 40px;
   white-space: pre-wrap;
+  font-size: 14px;
+  line-height: 1.4;
 }
-
 .golos-placeholder {
-  color: #666;
+  color: var(--placeholder-color);
   font-style: italic;
 }
 
-/* Скролбар для темної теми */
-.golos-content::-webkit-scrollbar {
-  width: 4px;
-}
-.golos-content::-webkit-scrollbar-thumb {
-  background: #555;
-  border-radius: 2px;
-}
-
-@keyframes golos-pulse {
+@keyframes pulse {
   0% {
-    box-shadow: 0 0 0 0 rgba(255, 69, 58, 0.4);
+    opacity: 1;
   }
-  70% {
-    box-shadow: 0 0 0 6px rgba(255, 69, 58, 0);
+  50% {
+    opacity: 0.5;
   }
   100% {
-    box-shadow: 0 0 0 0 rgba(255, 69, 58, 0);
+    opacity: 1;
   }
 }

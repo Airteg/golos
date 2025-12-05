@@ -6,12 +6,11 @@ export class GolosWidget {
     this.statusDot = null;
     this.statusText = null;
     this.contentArea = null;
-    this.closeBtn = null; // НОВЕ
+    this.closeBtn = null;
     this._isMounted = false;
-    this.onStopCallback = null; // НОВЕ: функція зворотного виклику
+    this.onStopCallback = null;
   }
 
-  // Метод для підписки на клік (викличемо його в content.js)
   onStopClick(callback) {
     this.onStopCallback = callback;
   }
@@ -30,7 +29,6 @@ export class GolosWidget {
 
     const wrapper = document.createElement("div");
     wrapper.className = "golos-widget golos-hidden";
-    // Кнопка .golos-close
     wrapper.innerHTML = `
       <div class="golos-header">
         <div class="golos-status">
@@ -49,9 +47,8 @@ export class GolosWidget {
     this.statusDot = wrapper.querySelector(".golos-dot");
     this.statusText = wrapper.querySelector(".golos-status-text");
     this.contentArea = wrapper.querySelector(".golos-content");
-    this.closeBtn = wrapper.querySelector(".golos-close"); // НОВЕ
+    this.closeBtn = wrapper.querySelector(".golos-close");
 
-    // НОВЕ: Слухаємо клік
     this.closeBtn.addEventListener("click", () => {
       if (this.onStopCallback) this.onStopCallback();
     });
@@ -62,6 +59,10 @@ export class GolosWidget {
 
   show() {
     if (!this._isMounted) this.mount();
+
+    this.contentArea.innerHTML =
+      '<span class="golos-placeholder">Говоріть...</span>';
+
     this.root.classList.remove("golos-hidden");
     this.setStatusCode("connecting");
   }

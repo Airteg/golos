@@ -18,19 +18,24 @@
       widget.hide();
     });
 
-    chrome.runtime.onMessage.addListener((message) => {
+    chrome.runtime.onMessage.addListener((message, sender, sendResponse) => {
+      // 1. Команда "Показати віджет" - тепер повертає відповідь!
       if (message.type === "CMD_ShowWidget") {
         const el = getActiveEditable();
         if (el) {
           widget.show();
+          // Кажемо Background'у: "Все ок, поле є"
+          sendResponse({ ok: true });
         } else {
-          console.warn("No editable element found");
+          // console.warn("No editable element found");
+          // Кажемо Background'у: "Стоп! Немає поля"
+          sendResponse({ ok: false });
         }
       }
 
+      // ... решта коду (EVENT_STATE_CHANGE, EVENT_TRANSCRIPT) без змін ...
       if (message.type === MSG.EVENT_STATE_CHANGE) {
         widget.setStatusCode(message.state);
-        // Якщо двигун зупинився (idle), ховаємо віджет
         if (message.state === "idle") {
           setTimeout(() => widget.hide(), 500);
         }
@@ -40,11 +45,12 @@
         widget.updateText(message.text, message.isFinal);
         if (message.isFinal) {
           const el = getActiveEditable();
-          if (el) {
-            insertText(el, message.text);
-          }
+          if (el) insertText(el, message.text);
         }
       }
+
+      // Важливо: повертаємо true, щоб sendResponse працював коректно (хоча тут ми відповідаємо синхронно, це хороша звичка)
+      // Але для синхронної відповіді можна і не повертати.
     });
   } catch (err) {
     console.error("[Golos Host] Error:", err);
