@@ -2,10 +2,10 @@ import { MSG } from "../utils/messaging.js";
 
 console.log("[Golos Engine] Ready to listen.");
 
-let recognition = null;
-let currentTargetTabId = null;
-let silenceTimer = null;
-const SILENCE_TIMEOUT_MS = 20500;
+let recognition = null; // SpeechRecognition instance
+let currentTargetTabId = null; // Tab ID to send transcripts to
+let silenceTimer = null; // Timer for silence detection
+const SILENCE_TIMEOUT_MS = 20000; // 20 seconds
 
 // --- СЛОВНИК МАКРОСІВ ---
 const MACROS = {
@@ -26,33 +26,35 @@ const MACROS = {
 function applyMacros(text) {
   if (!text) return text;
 
-  // Проходимось по всіх ключах і замінюємо (нечутливо до регістру)
-  // Використовуємо регулярку для заміни окремих слів
   let processed = text;
 
+  // 1. Заміна слів на символи
   for (const [key, value] of Object.entries(MACROS)) {
-    // Шукаємо слово, перед яким може бути пробіл, і після якого може бути пробіл
-    // Прапор 'gi' = global + case-insensitive
     const regex = new RegExp(`(^|\\s)${key}(?=$|\\s|[.,?!])`, "gi");
     processed = processed.replace(regex, (match, prefix) => {
-      // Якщо це просто символ (.,?), прибираємо зайвий пробіл перед ним
+      // Якщо це розділовий знак, ми не хочемо пробіл перед ним (окрім дужки відкриття)
       if ([".", ",", "?", "!", ":", ")"].includes(value)) {
         return value;
       }
-      // Для інших (смайлик, дужка відкривається) залишаємо префікс (пробіл)
       return prefix + value;
     });
   }
 
-  // Додаткова чистка: прибрати пробіли перед знаками пунктуації, якщо вони залишились
-  processed = processed.replace(/\s+([.,?!:])/g, "$1");
+  // 2. Чистка пробілів (FIX для дужок)
+
+  // Прибрати пробіли ПЕРЕД: . , ! ? : )
+  processed = processed.replace(/\s+([.,?!:);])/g, "$1");
+
+  // Прибрати пробіли ПІСЛЯ: (
+  processed = processed.replace(/(\()\s+/g, "$1");
+
+  // Додати пробіл ПІСЛЯ коми/крапки, якщо його немає (наприклад "привіт,як")
+  processed = processed.replace(/([.,?!:;])(?=[^\s])/g, "$1 ");
 
   return processed;
 }
-
-// ... initRecognition ...
+// --- ІНІЦІАЛІЗАЦІЯ РОЗПІЗНАВАННЯ ---
 async function initRecognition() {
-  // ... (початок такий самий) ...
   const SpeechRecognition =
     window.SpeechRecognition || window.webkitSpeechRecognition;
   if (!SpeechRecognition) return null;
@@ -92,11 +94,10 @@ async function initRecognition() {
       }
     }
 
-    // ЗАСТОСОВУЄМО МАКРОСИ ТІЛЬКИ ДО ФІНАЛЬНОГО ТЕКСТУ
-    // (щоб під час диктування ти бачив слова "кома", а в кінці вони ставали ",")
+    // ЗАСТОСОВУЄМО МАКРОС ТІЛЬКИ ДО ФІНАЛЬНОГО ТЕКСТУ
     if (final) {
       final = applyMacros(final);
-      // Капіталізація першої літери (бо макроси могли змінити структуру)
+      // Капіталізація першої літери фінального тексту
       final = final.charAt(0).toUpperCase() + final.slice(1);
     }
 
@@ -110,14 +111,12 @@ async function initRecognition() {
     }
   };
 
-  // ... onerror та інше без змін ...
   rec.onerror = (e) => {
     if (e.error !== "no-speech") sendState("error");
   };
   return rec;
 }
-
-// ... решта файлу (resetSilenceTimer, sendState, onMessage) без змін ...
+// --- ТАЙМЕР БЕЗДІЯЛЬНОСТІ ---
 function resetSilenceTimer() {
   clearTimeout(silenceTimer);
   silenceTimer = setTimeout(() => {
@@ -125,12 +124,12 @@ function resetSilenceTimer() {
     stopSession();
   }, SILENCE_TIMEOUT_MS);
 }
-
+// --- ЗУПИНКА СЕСІЇ ---
 function stopSession() {
   if (recognition) recognition.stop();
   updateStatusUI("Idle");
 }
-
+// --- ВІДПРАВКА СТАНУ ---
 function sendState(state) {
   if (currentTargetTabId) {
     chrome.runtime.sendMessage({
@@ -140,7 +139,7 @@ function sendState(state) {
     });
   }
 }
-
+// --- ОБРОБКА ПОВІДОМЛЕНЬ ---
 chrome.runtime.onMessage.addListener((message) => {
   if (message.type === MSG.CMD_START_SESSION) {
     currentTargetTabId = message.targetTabId;
@@ -156,7 +155,7 @@ chrome.runtime.onMessage.addListener((message) => {
   }
   if (message.type === MSG.CMD_STOP_SESSION) stopSession();
 });
-
+// --- UI СТАТУС ---
 function updateStatusUI(text) {
   const el = document.getElementById("status");
   if (el) el.textContent = text;
