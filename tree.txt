@@ -1,0 +1,53 @@
+D:\ProjectsVVV\ChromeExtension\golos
+├── golos-extension
+│   ├── assets
+│   │   ├── icons
+│   │   │   ├── icon-green-128.png
+│   │   │   ├── icon-green-16.png
+│   │   │   ├── icon-green-32.png
+│   │   │   ├── icon-green-48.png
+│   │   │   ├── icon-red-128.png
+│   │   │   ├── icon-red-16.png
+│   │   │   ├── icon-red-32.png
+│   │   │   └── icon-red-48.png
+│   │   ├── microphone.svg
+│   │   └── styles.css
+│   ├── background
+│   │   └── service-worker.js
+│   ├── content
+│   │   ├── content.js
+│   │   ├── dom-injector.js
+│   │   └── input-simulator.js
+│   ├── engine
+│   │   ├── engine.html
+│   │   └── engine.js
+│   ├── golos-api
+│   │   ├── .env
+│   │   ├── index.js
+│   │   ├── package.json
+│   │   └── pnpm-lock.yaml
+│   ├── legacy
+│   │   ├── dictation.html
+│   │   └── dictation.js
+│   ├── options
+│   │   ├── options.html
+│   │   └── options.js
+│   ├── popup
+│   │   ├── popup.html
+│   │   └── popup.js
+│   ├── utils
+│   │   └── messaging.js
+│   └── manifest.json
+├── md
+│   ├── analitics.md
+│   ├── Golos2.0_concept.md
+│   ├── stages.md
+│   ├── temp.md
+│   ├── ver1-g.md
+│   └── ver1.md
+├── .gitignore
+├── combined.txt
+├── index.html
+├── plan.md
+├── ReadMe.md
+└── tree.txt

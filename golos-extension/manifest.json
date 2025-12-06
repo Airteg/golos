@@ -9,9 +9,6 @@
     "service_worker": "background/service-worker.js",
     "type": "module"
   },
-  "action": {
-    "default_title": "Golos: Click to Dictate"
-  },
   "commands": {
     "golos-process-selection": {
       "suggested_key": { "default": "Alt+Shift+G" },
@@ -41,5 +38,20 @@
       ],
       "matches": ["<all_urls>"]
     }
-  ]
+  ],
+  "icons": {
+    "16": "assets/icons/icon-green-16.png",
+    "32": "assets/icons/icon-green-32.png",
+    "48": "assets/icons/icon-green-48.png",
+    "128": "assets/icons/icon-green-128.png"
+  },
+  "action": {
+    "default_title": "Golos: Натисни, щоб диктувати",
+    "default_icon": {
+      "16": "assets/icons/icon-green-16.png",
+      "32": "assets/icons/icon-green-32.png",
+      "48": "assets/icons/icon-green-48.png",
+      "128": "assets/icons/icon-green-128.png"
+    }
+  }
 }
