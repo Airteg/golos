@@ -146,6 +146,48 @@ chrome.runtime.onMessage.addListener((message, sender, sendResponse) => {
     }
   }
 });
+// --- 5. Контекстне меню (Settings) ---
+
+chrome.runtime.onInstalled.addListener(() => {
+  ensureEngineTab(); // Це в тебе вже є
+
+  // Створюємо пункт меню
+  chrome.contextMenus.create({
+    id: "open-settings",
+    title: "⚙️ Налаштування Golos",
+    contexts: ["all"], // Показувати скрізь (на тексті, на картинках, на пустому місці)
+  });
+});
+
+// Слухаємо клік по меню
+chrome.contextMenus.onClicked.addListener((info, tab) => {
+  if (info.menuItemId === "open-settings") {
+    // Відкриваємо нашу сторінку options.html
+    chrome.runtime.openOptionsPage();
+  }
+});
+
+// --- 6. Авто-стоп при зміні вкладки ---
+
+chrome.tabs.onActivated.addListener(async (activeInfo) => {
+  // activeInfo містить { tabId, windowId } нової активної вкладки
+
+  // Перевіряємо, чи у нас зараз йде запис (горить "ON")
+  const badgeText = await chrome.action.getBadgeText({});
+  const isRunning = badgeText === "ON";
+
+  if (isRunning) {
+    console.log("[Golos BG] Tab changed. Auto-stopping session.");
+
+    // Зупиняємо двигун
+    if (engineTabId) {
+      chrome.tabs.sendMessage(engineTabId, { type: MSG.CMD_STOP_SESSION });
+    }
+
+    // Очищаємо статус (візуально)
+    setVisualState("idle");
+  }
+});
 
 // Старт
 chrome.runtime.onInstalled.addListener(() => ensureEngineTab());
