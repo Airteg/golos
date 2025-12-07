@@ -10,3 +10,4 @@ build/
 # конфіденційне
 .env
 *.env
+.DS_Store
