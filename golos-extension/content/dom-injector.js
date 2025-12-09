@@ -21,13 +21,12 @@ export class GolosWidget {
     this.host = document.createElement("div");
     this.host.id = "golos-shadow-host";
 
-    // --- ВИПРАВЛЕНІ СТИЛІ HOST ---
-    // Використовуємо fixed, щоб віджет не скролився зі сторінкою
+    // Базові стилі (fixed)
     this.host.style.position = "fixed";
     this.host.style.zIndex = "2147483647";
     this.host.style.display = "block";
 
-    // Початкова позиція (можна змінити на будь-яку)
+    // Тимчасова дефолтна позиція (поки не підтягнеться збережена)
     this.host.style.bottom = "20px";
     this.host.style.right = "20px";
     this.host.style.left = "auto";
@@ -43,7 +42,6 @@ export class GolosWidget {
     const wrapper = document.createElement("div");
     wrapper.className = "golos-widget golos-hidden";
 
-    // Додаємо HTML
     wrapper.innerHTML = `
       <div class="golos-header" id="drag-handle">
         <div class="golos-status">
@@ -64,7 +62,7 @@ export class GolosWidget {
     this.contentArea = wrapper.querySelector(".golos-content");
     this.closeBtn = wrapper.querySelector(".golos-close");
 
-    // Зупинка (щоб клік не викликав drag)
+    // Зупинка
     this.closeBtn.addEventListener("click", (e) => {
       e.stopPropagation();
       if (this.onStopCallback) this.onStopCallback();
@@ -72,76 +70,102 @@ export class GolosWidget {
 
     document.body.appendChild(this.host);
 
-    // Ініціалізація перетягування
+    // Ініціалізація драг-дропу
     const header = wrapper.querySelector(".golos-header");
     this.makeDraggable(header);
+
+    // ВІДНОВЛЕННЯ ПОЗИЦІЇ З ПАМ'ЯТІ
+    this.restorePosition();
 
     this._isMounted = true;
   }
 
-  // --- СТАБІЛЬНА ЛОГІКА DRAG & DROP (FIXED) ---
+  // --- ЛОГІКА ЗБЕРЕЖЕННЯ ---
+
+  savePosition(left, top) {
+    // Зберігаємо в сховище Chrome (глобально)
+    chrome.storage.local.set(
+      {
+        golosWidgetPos: { left, top },
+      },
+      () => {
+        // Можна додати лог, якщо треба
+        // console.log("Position saved:", left, top);
+      }
+    );
+  }
+
+  restorePosition() {
+    chrome.storage.local.get(["golosWidgetPos"], (result) => {
+      if (result.golosWidgetPos) {
+        const { left, top } = result.golosWidgetPos;
+
+        // Перевірка, щоб не вилетів за екран (наприклад, якщо змінили монітор)
+        const winWidth = document.documentElement.clientWidth;
+        const winHeight = document.documentElement.clientHeight;
+
+        // Якщо збережені координати виходять за межі поточного вікна - скидаємо в дефолт
+        if (left > winWidth - 50 || top > winHeight - 50) {
+          return; // Залишаємо дефолтний bottom/right
+        }
+
+        // Застосовуємо збережені координати
+        this.host.style.bottom = "auto";
+        this.host.style.right = "auto";
+        this.host.style.left = left + "px";
+        this.host.style.top = top + "px";
+      }
+    });
+  }
+
+  // --- ЛОГІКА DRAG & DROP ---
   makeDraggable(triggerElement) {
     const onMouseDown = (e) => {
-      // Ігноруємо правий клік
       if (e.button !== 0) return;
+      e.preventDefault();
 
-      e.preventDefault(); // Забороняємо виділення тексту
-
-      // 1. Отримуємо поточні координати віджета відносно вікна
       const rect = this.host.getBoundingClientRect();
-
-      // 2. Рахуємо зсув курсора всередині шапки (щоб віджет не стрибав до центру мишки)
       const shiftX = e.clientX - rect.left;
       const shiftY = e.clientY - rect.top;
 
-      // 3. ПЕРЕМИКАЄМОСЯ НА КООРДИНАТИ LEFT/TOP
-      // Це критичний момент: ми "відриваємо" віджет від bottom/right
+      // Фіксація початкових координат перед рухом
       this.host.style.bottom = "auto";
       this.host.style.right = "auto";
       this.host.style.left = rect.left + "px";
       this.host.style.top = rect.top + "px";
 
-      // Гарантуємо, що він fixed
       this.host.style.position = "fixed";
-      this.host.style.transition = "none"; // Вимикаємо анімацію під час руху
+      this.host.style.transition = "none";
 
-      // Функція руху
       const onMouseMove = (moveEvent) => {
         moveEvent.preventDefault();
 
-        // Нові координати
         let newLeft = moveEvent.clientX - shiftX;
         let newTop = moveEvent.clientY - shiftY;
 
-        // --- ОБМЕЖЕННЯ (ЩОБ НЕ ВИЛЕТІВ ЗА ЕКРАН) ---
         const winWidth = document.documentElement.clientWidth;
         const winHeight = document.documentElement.clientHeight;
         const hostWidth = this.host.offsetWidth;
         const hostHeight = this.host.offsetHeight;
 
-        // Не пускаємо за лівий/верхній край
         if (newLeft < 0) newLeft = 0;
         if (newTop < 0) newTop = 0;
-
-        // Не пускаємо за правий/нижній край
         if (newLeft + hostWidth > winWidth) newLeft = winWidth - hostWidth;
         if (newTop + hostHeight > winHeight) newTop = winHeight - hostHeight;
 
-        // Застосовуємо
         this.host.style.left = newLeft + "px";
         this.host.style.top = newTop + "px";
       };
 
-      // Функція закінчення
       const onMouseUp = () => {
         document.removeEventListener("mousemove", onMouseMove);
         document.removeEventListener("mouseup", onMouseUp);
 
-        // Повертаємо transition (якщо треба для opacity)
-        // this.host.style.transition = "";
+        // ЗБЕРІГАЄМО НОВУ ПОЗИЦІЮ ПРИ ВІДПУСКАННІ
+        const finalRect = this.host.getBoundingClientRect();
+        this.savePosition(finalRect.left, finalRect.top);
       };
 
-      // Слухаємо події на document (щоб не загубити мишку при різкому русі)
       document.addEventListener("mousemove", onMouseMove);
       document.addEventListener("mouseup", onMouseUp);
     };

@@ -7,7 +7,7 @@
   --placeholder-color: #999;
 }
 
-/* Темна тема (System preference) */
+/* Темна тема */
 @media (prefers-color-scheme: dark) {
   :host {
     --bg-color: rgba(30, 30, 30, 0.95);
@@ -19,9 +19,7 @@
 }
 
 .golos-widget {
-  /* ВАЖЛИВО: Ми прибрали position: absolute/fixed, bottom, right */
-  /* Тепер цей блок просто заповнює Host-елемент, який рухає JS */
-
+  /* Тільки оформлення, позиція керується через JS (Host) */
   width: 280px;
   background: var(--bg-color);
   backdrop-filter: blur(10px);
@@ -37,25 +35,20 @@
   display: flex;
   flex-direction: column;
 
-  /* Анімація появи */
   transition:
     opacity 0.2s,
     transform 0.2s;
 
-  /* UX */
   user-select: none;
   touch-action: none;
 }
 
-/* Стан "Приховано" */
 .golos-hidden {
   opacity: 0;
   pointer-events: none;
-  /* Трохи зсуваємо вниз при зниканні для краси */
   transform: translateY(10px);
 }
 
-/* Шапка (за неї тягаємо) */
 .golos-header {
   display: flex;
   justify-content: space-between;
@@ -63,7 +56,6 @@
   background: var(--header-bg);
   border-bottom: 1px solid var(--border-color);
 
-  /* Курсор руки - показує, що можна тягнути */
   cursor: move;
   user-select: none;
 }
@@ -95,7 +87,6 @@
   white-space: pre-wrap;
   font-size: 14px;
   line-height: 1.4;
-  /* Дозволяємо виділяти текст результату, якщо треба скопіювати */
   user-select: text;
   cursor: text;
 }
