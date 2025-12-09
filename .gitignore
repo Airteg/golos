@@ -11,5 +11,4 @@ build/
 .env
 *.env
 .DS_Store
-tree.txt
-combined.txt
+*.txt
