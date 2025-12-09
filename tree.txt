@@ -32,9 +32,6 @@ D:\ProjectsVVV\ChromeExtension\golos
 │   ├── options
 │   │   ├── options.html
 │   │   └── options.js
-│   ├── popup
-│   │   ├── popup.html
-│   │   └── popup.js
 │   ├── utils
 │   │   └── messaging.js
 │   └── manifest.json

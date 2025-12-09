@@ -7,7 +7,7 @@
   --placeholder-color: #999;
 }
 
-/* Якщо у користувача в Windows/Mac стоїть Темна тема */
+/* Темна тема (System preference) */
 @media (prefers-color-scheme: dark) {
   :host {
     --bg-color: rgba(30, 30, 30, 0.95);
@@ -19,37 +19,53 @@
 }
 
 .golos-widget {
-  position: fixed;
-  bottom: 30px;
-  right: 30px;
+  /* ВАЖЛИВО: Ми прибрали position: absolute/fixed, bottom, right */
+  /* Тепер цей блок просто заповнює Host-елемент, який рухає JS */
+
   width: 280px;
-  background: var(--bg-color); /* Використовуємо змінну */
+  background: var(--bg-color);
   backdrop-filter: blur(10px);
-  color: var(--text-color); /* Використовуємо змінну */
+  color: var(--text-color);
   border: 1px solid var(--border-color);
   box-shadow: 0 10px 30px rgba(0, 0, 0, 0.2);
   border-radius: 12px;
-  font-family: system-ui, sans-serif;
-  z-index: 2147483647;
+  font-family:
+    system-ui,
+    -apple-system,
+    sans-serif;
+
   display: flex;
   flex-direction: column;
+
+  /* Анімація появи */
   transition:
     opacity 0.2s,
     transform 0.2s;
+
+  /* UX */
+  user-select: none;
+  touch-action: none;
 }
 
+/* Стан "Приховано" */
 .golos-hidden {
   opacity: 0;
   pointer-events: none;
+  /* Трохи зсуваємо вниз при зниканні для краси */
   transform: translateY(10px);
 }
 
+/* Шапка (за неї тягаємо) */
 .golos-header {
   display: flex;
   justify-content: space-between;
   padding: 10px 14px;
   background: var(--header-bg);
   border-bottom: 1px solid var(--border-color);
+
+  /* Курсор руки - показує, що можна тягнути */
+  cursor: move;
+  user-select: none;
 }
 
 .golos-status {
@@ -59,27 +75,35 @@
   font-size: 12px;
   font-weight: 600;
 }
+
 .golos-dot {
   width: 8px;
   height: 8px;
   border-radius: 50%;
   background: #ccc;
 }
+
 .golos-dot.listening {
   background: #ff453a;
   box-shadow: 0 0 8px #ff453a;
   animation: pulse 1.5s infinite;
 }
+
 .golos-content {
   padding: 14px;
   min-height: 40px;
   white-space: pre-wrap;
   font-size: 14px;
   line-height: 1.4;
+  /* Дозволяємо виділяти текст результату, якщо треба скопіювати */
+  user-select: text;
+  cursor: text;
 }
+
 .golos-placeholder {
   color: var(--placeholder-color);
   font-style: italic;
+  pointer-events: none;
 }
 
 @keyframes pulse {

@@ -4,13 +4,15 @@ D:\ProjectsVVV\ChromeExtension\golos\golos-extension
 --------------------------------------------------
 D:\ProjectsVVV\ChromeExtension\golos\golos-extension\assets
 --------------------------------------------------
+D:\ProjectsVVV\ChromeExtension\golos\golos-extension\assets\icons
+--------------------------------------------------
 D:\ProjectsVVV\ChromeExtension\golos\golos-extension\background
 --------------------------------------------------
 D:\ProjectsVVV\ChromeExtension\golos\golos-extension\background\service-worker.js
 --------------------------------------------------
 import { MSG } from "../utils/messaging.js";
 
-console.log("[Golos BG] Router v2.0 Started");
+console.log("[Golos BG] Router v2.1 Fixed");
 
 let engineTabId = null;
 
@@ -37,26 +39,47 @@ async function ensureEngineTab() {
   }
 }
 
-// --- 2. Візуалізація стану (Іконка + Badge) ---
+// --- 2. Візуалізація стану ---
 
 function setVisualState(state) {
   // state: 'idle' | 'listening' | 'error'
 
   if (state === "listening") {
+    // 🔴 Стан ЗАПИСУ
+    chrome.action.setIcon({
+      path: {
+        16: "assets/icons/icon-red-16.png",
+        32: "assets/icons/icon-red-32.png",
+        48: "assets/icons/icon-red-48.png",
+        128: "assets/icons/icon-red-128.png",
+      },
+    });
+    // ВАЖЛИВО: Залишаємо "ON", бо на ньому тримається логіка перемикача!
     chrome.action.setBadgeText({ text: "ON" });
     chrome.action.setBadgeBackgroundColor({ color: "#ef4444" });
-    // Якщо у тебе будуть іконки:
-    // chrome.action.setIcon({ path: "assets/icon-red.png" });
-  } else {
-    chrome.action.setBadgeText({ text: "" }); // Прибираємо текст
-    // chrome.action.setIcon({ path: "assets/icon-gray.png" });
+  } else if (state === "idle") {
+    // 🟢 Стан СПОКОЮ
+    chrome.action.setIcon({
+      path: {
+        16: "assets/icons/icon-green-16.png",
+        32: "assets/icons/icon-green-32.png",
+        48: "assets/icons/icon-green-48.png",
+        128: "assets/icons/icon-green-128.png",
+      },
+    });
+    // Прибираємо текст
+    chrome.action.setBadgeText({ text: "" });
+  } else if (state === "error") {
+    // ⚠️ Помилка
+    chrome.action.setBadgeText({ text: "ERR" });
+    chrome.action.setBadgeBackgroundColor({ color: "#000000" });
   }
 }
 
 // --- 3. Головний перемикач (Toggle) ---
 
 async function toggleSession() {
-  // Перевіряємо статус по бейджу (це наше джерело правди)
+  // Джерело правди — текст на бейджі
   const badgeText = await chrome.action.getBadgeText({});
   const isRunning = badgeText === "ON";
 
@@ -65,43 +88,58 @@ async function toggleSession() {
     console.log("[Golos BG] Action: STOP");
     if (engineTabId) {
       chrome.tabs.sendMessage(engineTabId, { type: MSG.CMD_STOP_SESSION });
+      // Примусово скидаємо візуал, не чекаючи відповіді
       setVisualState("idle");
     }
   } else {
     // === START ===
     console.log("[Golos BG] Action: START");
 
-    // 1. Шукаємо активну вкладку (куди писати)
+    // 1. Шукаємо активну вкладку
     const tabs = await chrome.tabs.query({
       active: true,
       lastFocusedWindow: true,
     });
     const activeTab = tabs[0];
 
-    // Перевірка: чи це не службова сторінка (chrome://)
+    // Перевірка на системні сторінки
     if (!activeTab || !activeTab.id || activeTab.url.startsWith("chrome://")) {
       console.warn("Cannot dictate on this tab");
-      // Можна блимнути бейджем "ERR"
       chrome.action.setBadgeText({ text: "ERR" });
       setTimeout(() => chrome.action.setBadgeText({ text: "" }), 1500);
       return;
     }
 
-    // 2. Показуємо віджет
-    chrome.tabs
-      .sendMessage(activeTab.id, { type: "CMD_ShowWidget" })
-      .catch(() => {
-        console.warn("Widget not ready. Please refresh the page.");
+    // 2. ПИТАЄМО сторінку: "Чи є куди писати?"
+    try {
+      const response = await chrome.tabs.sendMessage(activeTab.id, {
+        type: "CMD_ShowWidget",
       });
+
+      if (!response || !response.ok) {
+        console.warn("[Golos BG] Page said NO (no input field).");
+        chrome.action.setBadgeText({ text: "NO" });
+        setTimeout(() => chrome.action.setBadgeText({ text: "" }), 1500);
+        return;
+      }
+    } catch (err) {
+      console.warn("[Golos BG] Content script not ready or error:", err);
+      // Якщо скрипт не відповів — пробуємо перезавантажити його (або просто показуємо помилку)
+      chrome.action.setBadgeText({ text: "?" });
+      return;
+    }
 
     // 3. Запускаємо двигун
     ensureEngineTab().then((engId) => {
       if (!engId) return;
+
+      // Ставимо статус ЗАРАЗ, щоб інтерфейс відгукнувся миттєво
+      setVisualState("listening");
+
       chrome.tabs.sendMessage(engId, {
         type: MSG.CMD_START_SESSION,
         targetTabId: activeTab.id,
       });
-      setVisualState("listening");
     });
   }
 }
@@ -137,7 +175,10 @@ chrome.runtime.onMessage.addListener((message, sender, sendResponse) => {
   ) {
     // Синхронізація UI при авто-стопі
     if (message.type === MSG.EVENT_STATE_CHANGE) {
-      setVisualState(message.state);
+      // Якщо engine сам перейшов у idle (таймаут) -> оновлюємо іконку
+      if (message.state === "idle" || message.state === "error") {
+        setVisualState("idle");
+      }
     }
 
     const destTabId = message.targetTabId;
@@ -147,8 +188,37 @@ chrome.runtime.onMessage.addListener((message, sender, sendResponse) => {
   }
 });
 
+// --- 5. Контекстне меню (Settings) ---
+chrome.runtime.onInstalled.addListener(() => {
+  ensureEngineTab();
+  chrome.contextMenus.create({
+    id: "open-settings",
+    title: "⚙️ Налаштування Golos",
+    contexts: ["all"],
+  });
+});
+
+chrome.contextMenus.onClicked.addListener((info, tab) => {
+  if (info.menuItemId === "open-settings") {
+    chrome.runtime.openOptionsPage();
+  }
+});
+
+// --- 6. Авто-стоп при зміні вкладки ---
+chrome.tabs.onActivated.addListener(async (activeInfo) => {
+  const badgeText = await chrome.action.getBadgeText({});
+  const isRunning = badgeText === "ON";
+
+  if (isRunning) {
+    console.log("[Golos BG] Tab changed. Auto-stopping session.");
+    if (engineTabId) {
+      chrome.tabs.sendMessage(engineTabId, { type: MSG.CMD_STOP_SESSION });
+    }
+    setVisualState("idle");
+  }
+});
+
 // Старт
-chrome.runtime.onInstalled.addListener(() => ensureEngineTab());
 chrome.runtime.onStartup.addListener(() => ensureEngineTab());
 --------------------------------------------------
 D:\ProjectsVVV\ChromeExtension\golos\golos-extension\content
@@ -175,19 +245,24 @@ D:\ProjectsVVV\ChromeExtension\golos\golos-extension\content\content.js
       widget.hide();
     });
 
-    chrome.runtime.onMessage.addListener((message) => {
+    chrome.runtime.onMessage.addListener((message, sender, sendResponse) => {
+      // 1. Команда "Показати віджет" - тепер повертає відповідь!
       if (message.type === "CMD_ShowWidget") {
         const el = getActiveEditable();
         if (el) {
           widget.show();
+          // Кажемо Background'у: "Все ок, поле є"
+          sendResponse({ ok: true });
         } else {
-          console.warn("No editable element found");
+          // console.warn("No editable element found");
+          // Кажемо Background'у: "Стоп! Немає поля"
+          sendResponse({ ok: false });
         }
       }
 
+      // ... решта коду (EVENT_STATE_CHANGE, EVENT_TRANSCRIPT) без змін ...
       if (message.type === MSG.EVENT_STATE_CHANGE) {
         widget.setStatusCode(message.state);
-        // Якщо двигун зупинився (idle), ховаємо віджет
         if (message.state === "idle") {
           setTimeout(() => widget.hide(), 500);
         }
@@ -197,11 +272,12 @@ D:\ProjectsVVV\ChromeExtension\golos\golos-extension\content\content.js
         widget.updateText(message.text, message.isFinal);
         if (message.isFinal) {
           const el = getActiveEditable();
-          if (el) {
-            insertText(el, message.text);
-          }
+          if (el) insertText(el, message.text);
         }
       }
+
+      // Важливо: повертаємо true, щоб sendResponse працював коректно (хоча тут ми відповідаємо синхронно, це хороша звичка)
+      // Але для синхронної відповіді можна і не повертати.
     });
   } catch (err) {
     console.error("[Golos Host] Error:", err);
@@ -218,12 +294,11 @@ export class GolosWidget {
     this.statusDot = null;
     this.statusText = null;
     this.contentArea = null;
-    this.closeBtn = null; // НОВЕ
+    this.closeBtn = null;
     this._isMounted = false;
-    this.onStopCallback = null; // НОВЕ: функція зворотного виклику
+    this.onStopCallback = null;
   }
 
-  // Метод для підписки на клік (викличемо його в content.js)
   onStopClick(callback) {
     this.onStopCallback = callback;
   }
@@ -231,8 +306,14 @@ export class GolosWidget {
   mount() {
     if (this._isMounted) return;
 
+    // Створюємо Host
     this.host = document.createElement("div");
     this.host.id = "golos-shadow-host";
+
+    // ВАЖЛИВО: Початкові стилі для скидання впливу сторінки
+    this.host.style.display = "block";
+    this.host.style.zIndex = "2147483647"; // Максимальний Z-index
+
     this.shadow = this.host.attachShadow({ mode: "open" });
 
     const linkElem = document.createElement("link");
@@ -242,9 +323,8 @@ export class GolosWidget {
 
     const wrapper = document.createElement("div");
     wrapper.className = "golos-widget golos-hidden";
-    // Кнопка .golos-close
     wrapper.innerHTML = `
-      <div class="golos-header">
+      <div class="golos-header" id="drag-handle">
         <div class="golos-status">
           <div class="golos-dot"></div>
           <span class="golos-status-text">Golos</span>
@@ -261,19 +341,90 @@ export class GolosWidget {
     this.statusDot = wrapper.querySelector(".golos-dot");
     this.statusText = wrapper.querySelector(".golos-status-text");
     this.contentArea = wrapper.querySelector(".golos-content");
-    this.closeBtn = wrapper.querySelector(".golos-close"); // НОВЕ
+    this.closeBtn = wrapper.querySelector(".golos-close");
 
-    // НОВЕ: Слухаємо клік
-    this.closeBtn.addEventListener("click", () => {
+    // Зупинка
+    this.closeBtn.addEventListener("click", (e) => {
+      e.stopPropagation(); // Щоб клік не починав перетягування
       if (this.onStopCallback) this.onStopCallback();
     });
 
     document.body.appendChild(this.host);
+
+    // Ініціалізація перетягування (Header - це ручка)
+    const header = wrapper.querySelector(".golos-header");
+    this.makeDraggable(header);
+
     this._isMounted = true;
   }
 
+  // --- ПОКРАЩЕНА ЛОГІКА DRAG & DROP ---
+  makeDraggable(triggerElement) {
+    triggerElement.addEventListener("mousedown", (e) => {
+      e.preventDefault(); // Забороняємо виділення тексту
+
+      // 1. Де зараз віджет?
+      const rect = this.host.getBoundingClientRect();
+
+      // 2. Де мишка відносно лівого верхнього кута віджета?
+      const shiftX = e.clientX - rect.left;
+      const shiftY = e.clientY - rect.top;
+
+      // 3. Підготовка до руху
+      this.host.style.transition = "none"; // Вимикаємо анімацію, щоб не "лагодило" при русі
+
+      // ВАЖЛИВО: Відриваємо від правого нижнього кута
+      this.host.style.bottom = "auto";
+      this.host.style.right = "auto";
+      // Фіксуємо поточну позицію в left/top, щоб не стрибнуло
+      this.host.style.left = rect.left + "px";
+      this.host.style.top = rect.top + "px";
+
+      const onMouseMove = (moveEvent) => {
+        // Нові координати
+        let newLeft = moveEvent.clientX - shiftX;
+        let newTop = moveEvent.clientY - shiftY;
+
+        // (Опціонально) Обмеження, щоб не витягнути за межі екрану
+        const winWidth = window.innerWidth;
+        const winHeight = window.innerHeight;
+        const hostWidth = this.host.offsetWidth;
+        const hostHeight = this.host.offsetHeight;
+
+        // Не даємо вийти за лівий/верхній край
+        if (newLeft < 0) newLeft = 0;
+        if (newTop < 0) newTop = 0;
+        // Не даємо вийти за правий/нижній край
+        if (newLeft + hostWidth > winWidth) newLeft = winWidth - hostWidth;
+        if (newTop + hostHeight > winHeight) newTop = winHeight - hostHeight;
+
+        this.host.style.left = newLeft + "px";
+        this.host.style.top = newTop + "px";
+      };
+
+      const onMouseUp = () => {
+        // Прибираємо слухачів
+        document.removeEventListener("mousemove", onMouseMove);
+        document.removeEventListener("mouseup", onMouseUp);
+
+        // Повертаємо анімацію (якщо вона потрібна для появи/зникнення)
+        // this.host.style.transition = "";
+      };
+
+      // Слухаємо рух по всьому документу
+      document.addEventListener("mousemove", onMouseMove);
+      document.addEventListener("mouseup", onMouseUp);
+    });
+  }
+  // ---------------------------
+
   show() {
     if (!this._isMounted) this.mount();
+
+    // Очищення тексту
+    this.contentArea.innerHTML =
+      '<span class="golos-placeholder">Говоріть...</span>';
+
     this.root.classList.remove("golos-hidden");
     this.setStatusCode("connecting");
   }
@@ -298,9 +449,11 @@ export class GolosWidget {
         this.statusDot.classList.add("listening");
         this.statusText.textContent = "Слухаю...";
         break;
-      case "processing":
-        this.statusDot.classList.add("processing");
-        this.statusText.textContent = "Обробка...";
+      case "idle":
+        this.statusText.textContent = "Golos";
+        break;
+      case "error":
+        this.statusText.textContent = "Помилка";
         break;
       case "connecting":
         this.statusText.textContent = "Запуск...";
@@ -730,42 +883,6 @@ saveBtn.addEventListener("click", () => {
 
     console.log("[Golos Options] Saved:", lang);
   });
-});
---------------------------------------------------
-D:\ProjectsVVV\ChromeExtension\golos\golos-extension\popup
---------------------------------------------------
-D:\ProjectsVVV\ChromeExtension\golos\golos-extension\popup\popup.js
---------------------------------------------------
-document.addEventListener("DOMContentLoaded", async () => {
-  const langSelect = document.getElementById("lang-select");
-  const statusDot = document.getElementById("status-dot");
-  const statusText = document.getElementById("status-text");
-
-  // 1. Завантажуємо збережену мову (за замовчуванням uk-UA)
-  chrome.storage.sync.get({ golosLang: "uk-UA" }, (items) => {
-    langSelect.value = items.golosLang;
-  });
-
-  // 2. Зберігаємо при зміні
-  langSelect.addEventListener("change", () => {
-    const newVal = langSelect.value;
-    chrome.storage.sync.set({ golosLang: newVal }, () => {
-      console.log("Language saved:", newVal);
-      // Можна блимнути користувачу, що збережено
-    });
-  });
-
-  // 3. Перевіряємо, чи живий Engine
-  const engineUrl = chrome.runtime.getURL("engine/engine.html");
-  const tabs = await chrome.tabs.query({ url: engineUrl });
-
-  if (tabs.length > 0) {
-    statusDot.classList.add("ok");
-    statusText.textContent = "Engine Ready";
-  } else {
-    statusDot.classList.remove("ok");
-    statusText.textContent = "Engine Sleeping";
-  }
 });
 --------------------------------------------------
 D:\ProjectsVVV\ChromeExtension\golos\golos-extension\utils
