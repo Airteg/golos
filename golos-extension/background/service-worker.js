@@ -36,10 +36,10 @@ function setVisualState(state) {
     // 🔴 Стан ЗАПИСУ
     chrome.action.setIcon({
       path: {
-        16: "assets/icons/icon-red-16.png",
-        32: "assets/icons/icon-red-32.png",
-        48: "assets/icons/icon-red-48.png",
-        128: "assets/icons/icon-red-128.png",
+        16: "/assets/icons/icon-red-16.png",
+        32: "/assets/icons/icon-red-32.png",
+        48: "/assets/icons/icon-red-48.png",
+        128: "/assets/icons/icon-red-128.png",
       },
     });
     // ВАЖЛИВО: Залишаємо "ON", бо на ньому тримається логіка перемикача!
@@ -49,10 +49,10 @@ function setVisualState(state) {
     // 🟢 Стан СПОКОЮ
     chrome.action.setIcon({
       path: {
-        16: "assets/icons/icon-green-16.png",
-        32: "assets/icons/icon-green-32.png",
-        48: "assets/icons/icon-green-48.png",
-        128: "assets/icons/icon-green-128.png",
+        16: "/assets/icons/icon-green-16.png",
+        32: "/assets/icons/icon-green-32.png",
+        48: "/assets/icons/icon-green-48.png",
+        128: "/assets/icons/icon-green-128.png",
       },
     });
     // Прибираємо текст
