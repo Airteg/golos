@@ -48,10 +48,10 @@ function setVisualState(state) {
     // 🔴 Стан ЗАПИСУ
     chrome.action.setIcon({
       path: {
-        16: "assets/icons/icon-red-16.png",
-        32: "assets/icons/icon-red-32.png",
-        48: "assets/icons/icon-red-48.png",
-        128: "assets/icons/icon-red-128.png",
+        16: "/assets/icons/icon-red-16.png",
+        32: "/assets/icons/icon-red-32.png",
+        48: "/assets/icons/icon-red-48.png",
+        128: "/assets/icons/icon-red-128.png",
       },
     });
     // ВАЖЛИВО: Залишаємо "ON", бо на ньому тримається логіка перемикача!
@@ -61,10 +61,10 @@ function setVisualState(state) {
     // 🟢 Стан СПОКОЮ
     chrome.action.setIcon({
       path: {
-        16: "assets/icons/icon-green-16.png",
-        32: "assets/icons/icon-green-32.png",
-        48: "assets/icons/icon-green-48.png",
-        128: "assets/icons/icon-green-128.png",
+        16: "/assets/icons/icon-green-16.png",
+        32: "/assets/icons/icon-green-32.png",
+        48: "/assets/icons/icon-green-48.png",
+        128: "/assets/icons/icon-green-128.png",
       },
     });
     // Прибираємо текст
@@ -306,13 +306,19 @@ export class GolosWidget {
   mount() {
     if (this._isMounted) return;
 
-    // Створюємо Host
     this.host = document.createElement("div");
     this.host.id = "golos-shadow-host";
 
-    // ВАЖЛИВО: Початкові стилі для скидання впливу сторінки
+    // Базові стилі (fixed)
+    this.host.style.position = "fixed";
+    this.host.style.zIndex = "2147483647";
     this.host.style.display = "block";
-    this.host.style.zIndex = "2147483647"; // Максимальний Z-index
+
+    // Тимчасова дефолтна позиція (поки не підтягнеться збережена)
+    this.host.style.bottom = "20px";
+    this.host.style.right = "20px";
+    this.host.style.left = "auto";
+    this.host.style.top = "auto";
 
     this.shadow = this.host.attachShadow({ mode: "open" });
 
@@ -323,6 +329,7 @@ export class GolosWidget {
 
     const wrapper = document.createElement("div");
     wrapper.className = "golos-widget golos-hidden";
+
     wrapper.innerHTML = `
       <div class="golos-header" id="drag-handle">
         <div class="golos-status">
@@ -345,56 +352,92 @@ export class GolosWidget {
 
     // Зупинка
     this.closeBtn.addEventListener("click", (e) => {
-      e.stopPropagation(); // Щоб клік не починав перетягування
+      e.stopPropagation();
       if (this.onStopCallback) this.onStopCallback();
     });
 
     document.body.appendChild(this.host);
 
-    // Ініціалізація перетягування (Header - це ручка)
+    // Ініціалізація драг-дропу
     const header = wrapper.querySelector(".golos-header");
     this.makeDraggable(header);
+
+    // ВІДНОВЛЕННЯ ПОЗИЦІЇ З ПАМ'ЯТІ
+    this.restorePosition();
 
     this._isMounted = true;
   }
 
-  // --- ПОКРАЩЕНА ЛОГІКА DRAG & DROP ---
+  // --- ЛОГІКА ЗБЕРЕЖЕННЯ ---
+
+  savePosition(left, top) {
+    // Зберігаємо в сховище Chrome (глобально)
+    chrome.storage.local.set(
+      {
+        golosWidgetPos: { left, top },
+      },
+      () => {
+        // Можна додати лог, якщо треба
+        // console.log("Position saved:", left, top);
+      }
+    );
+  }
+
+  restorePosition() {
+    chrome.storage.local.get(["golosWidgetPos"], (result) => {
+      if (result.golosWidgetPos) {
+        const { left, top } = result.golosWidgetPos;
+
+        // Перевірка, щоб не вилетів за екран (наприклад, якщо змінили монітор)
+        const winWidth = document.documentElement.clientWidth;
+        const winHeight = document.documentElement.clientHeight;
+
+        // Якщо збережені координати виходять за межі поточного вікна - скидаємо в дефолт
+        if (left > winWidth - 50 || top > winHeight - 50) {
+          return; // Залишаємо дефолтний bottom/right
+        }
+
+        // Застосовуємо збережені координати
+        this.host.style.bottom = "auto";
+        this.host.style.right = "auto";
+        this.host.style.left = left + "px";
+        this.host.style.top = top + "px";
+      }
+    });
+  }
+
+  // --- ЛОГІКА DRAG & DROP ---
   makeDraggable(triggerElement) {
-    triggerElement.addEventListener("mousedown", (e) => {
-      e.preventDefault(); // Забороняємо виділення тексту
+    const onMouseDown = (e) => {
+      if (e.button !== 0) return;
+      e.preventDefault();
 
-      // 1. Де зараз віджет?
       const rect = this.host.getBoundingClientRect();
-
-      // 2. Де мишка відносно лівого верхнього кута віджета?
       const shiftX = e.clientX - rect.left;
       const shiftY = e.clientY - rect.top;
 
-      // 3. Підготовка до руху
-      this.host.style.transition = "none"; // Вимикаємо анімацію, щоб не "лагодило" при русі
-
-      // ВАЖЛИВО: Відриваємо від правого нижнього кута
+      // Фіксація початкових координат перед рухом
       this.host.style.bottom = "auto";
       this.host.style.right = "auto";
-      // Фіксуємо поточну позицію в left/top, щоб не стрибнуло
       this.host.style.left = rect.left + "px";
       this.host.style.top = rect.top + "px";
 
+      this.host.style.position = "fixed";
+      this.host.style.transition = "none";
+
       const onMouseMove = (moveEvent) => {
-        // Нові координати
+        moveEvent.preventDefault();
+
         let newLeft = moveEvent.clientX - shiftX;
         let newTop = moveEvent.clientY - shiftY;
 
-        // (Опціонально) Обмеження, щоб не витягнути за межі екрану
-        const winWidth = window.innerWidth;
-        const winHeight = window.innerHeight;
+        const winWidth = document.documentElement.clientWidth;
+        const winHeight = document.documentElement.clientHeight;
         const hostWidth = this.host.offsetWidth;
         const hostHeight = this.host.offsetHeight;
 
-        // Не даємо вийти за лівий/верхній край
         if (newLeft < 0) newLeft = 0;
         if (newTop < 0) newTop = 0;
-        // Не даємо вийти за правий/нижній край
         if (newLeft + hostWidth > winWidth) newLeft = winWidth - hostWidth;
         if (newTop + hostHeight > winHeight) newTop = winHeight - hostHeight;
 
@@ -403,28 +446,25 @@ export class GolosWidget {
       };
 
       const onMouseUp = () => {
-        // Прибираємо слухачів
         document.removeEventListener("mousemove", onMouseMove);
         document.removeEventListener("mouseup", onMouseUp);
 
-        // Повертаємо анімацію (якщо вона потрібна для появи/зникнення)
-        // this.host.style.transition = "";
+        // ЗБЕРІГАЄМО НОВУ ПОЗИЦІЮ ПРИ ВІДПУСКАННІ
+        const finalRect = this.host.getBoundingClientRect();
+        this.savePosition(finalRect.left, finalRect.top);
       };
 
-      // Слухаємо рух по всьому документу
       document.addEventListener("mousemove", onMouseMove);
       document.addEventListener("mouseup", onMouseUp);
-    });
+    };
+
+    triggerElement.addEventListener("mousedown", onMouseDown);
   }
-  // ---------------------------
 
   show() {
     if (!this._isMounted) this.mount();
-
-    // Очищення тексту
     this.contentArea.innerHTML =
       '<span class="golos-placeholder">Говоріть...</span>';
-
     this.root.classList.remove("golos-hidden");
     this.setStatusCode("connecting");
   }
