@@ -1,6 +1,6 @@
 import { MSG } from "../utils/messaging.js";
 
-console.log("[Golos BG] Router v2.1 Fixed");
+// console.log("[Golos BG] Router v2.1 Fixed");
 
 let engineTabId = null;
 
@@ -42,7 +42,7 @@ function setVisualState(state) {
         128: "/assets/icons/icon-red-128.png",
       },
     });
-    // ВАЖЛИВО: Залишаємо "ON", бо на ньому тримається логіка перемикача!
+    //! ВАЖЛИВО: Залишаємо "ON", бо на ньому тримається логіка перемикача!
     chrome.action.setBadgeText({ text: "ON" });
     chrome.action.setBadgeBackgroundColor({ color: "#ef4444" });
   } else if (state === "idle") {
@@ -168,7 +168,7 @@ chrome.runtime.onMessage.addListener((message, sender, sendResponse) => {
         setVisualState("idle");
       }
     }
-
+    // Пересилаємо повідомлення на цільову вкладку
     const destTabId = message.targetTabId;
     if (destTabId) {
       chrome.tabs.sendMessage(destTabId, message).catch(() => {});
@@ -176,7 +176,7 @@ chrome.runtime.onMessage.addListener((message, sender, sendResponse) => {
   }
 });
 
-// --- 5. Контекстне меню (Settings) ---
+// --- Контекстне меню (Settings) ---
 chrome.runtime.onInstalled.addListener(() => {
   ensureEngineTab();
   chrome.contextMenus.create({
@@ -185,14 +185,14 @@ chrome.runtime.onInstalled.addListener(() => {
     contexts: ["all"],
   });
 });
-
+// Обробка кліку по пункту меню
 chrome.contextMenus.onClicked.addListener((info, tab) => {
   if (info.menuItemId === "open-settings") {
     chrome.runtime.openOptionsPage();
   }
 });
 
-// --- 6. Авто-стоп при зміні вкладки ---
+// --- Авто-стоп при зміні вкладки ---
 chrome.tabs.onActivated.addListener(async (activeInfo) => {
   const badgeText = await chrome.action.getBadgeText({});
   const isRunning = badgeText === "ON";

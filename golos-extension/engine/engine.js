@@ -23,6 +23,7 @@ const MACROS = {
   смайлик: "🙂",
 };
 
+// TODO --- ФУНКЦІЯ ЗАСТОСУВАННЯ МАКРОСІВ працює некоректно з деякими розділовими знаками ---
 function applyMacros(text) {
   if (!text) return text;
 
@@ -53,6 +54,7 @@ function applyMacros(text) {
 
   return processed;
 }
+
 // --- ІНІЦІАЛІЗАЦІЯ РОЗПІЗНАВАННЯ ---
 async function initRecognition() {
   const SpeechRecognition =

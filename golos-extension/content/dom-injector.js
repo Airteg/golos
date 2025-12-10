@@ -89,7 +89,6 @@ export class GolosWidget {
         golosWidgetPos: { left, top },
       },
       () => {
-        // Можна додати лог, якщо треба
         // console.log("Position saved:", left, top);
       }
     );
