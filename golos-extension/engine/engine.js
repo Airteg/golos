@@ -1,6 +1,6 @@
 import { MSG } from "../utils/messaging.js";
 
-console.log("[Golos Engine] Ready v2.7 Instant Feedback Clean");
+console.log("[Golos Engine] Ready v2.8 Robust Audio");
 
 // --- АУДІО СИСТЕМА (Web Audio API) ---
 const audioCtx = new (window.AudioContext || window.webkitAudioContext)();
@@ -19,14 +19,17 @@ async function loadSound(name, url) {
   }
 }
 
-// Завантаження звуків (IIFE)
-(async () => {
-  await loadSound("start", chrome.runtime.getURL("assets/sounds/on.mp3"));
-  await loadSound("end", chrome.runtime.getURL("assets/sounds/off.mp3"));
-  await loadSound("error", chrome.runtime.getURL("assets/sounds/error.mp3"));
-})();
+// 🔥 Promise, який гарантує, що звуки готові
+const soundsReadyPromise = Promise.all([
+  loadSound("start", chrome.runtime.getURL("assets/sounds/on.mp3")),
+  loadSound("end", chrome.runtime.getURL("assets/sounds/off.mp3")),
+  loadSound("error", chrome.runtime.getURL("assets/sounds/error.mp3")),
+]);
 
-function playSound(type) {
+async function playSound(type) {
+  // Чекаємо завантаження перед програванням
+  await soundsReadyPromise;
+
   if (audioCtx.state === "suspended") {
     audioCtx.resume();
   }
@@ -87,6 +90,9 @@ async function initRecognition() {
     window.SpeechRecognition || window.webkitSpeechRecognition;
   if (!SpeechRecognition) return null;
 
+  // Чекаємо звуки перед ініціалізацією
+  await soundsReadyPromise;
+
   const { golosLang } = await chrome.storage.sync.get({ golosLang: "uk-UA" });
   console.log(`[Golos Engine] Lang: ${golosLang}`);
 
@@ -108,9 +114,8 @@ async function initRecognition() {
   };
 
   rec.onend = () => {
-    console.log("[Golos Engine] OFF (onend triggered)");
+    console.log("[Golos Engine] OFF (onend)");
 
-    // ГРАЄМО ЗВУК ТІЛЬКИ ЯКЩО МИ ЩЕ НЕ ЗУПИНИЛИ ЙОГО ВРУЧНУ
     if (!isManuallyStopped) {
       playSound("end");
     }
@@ -169,7 +174,7 @@ function stopSession() {
 
   isManuallyStopped = true;
 
-  // Граємо звук НЕГАЙНО
+  // Граємо звук (навіть якщо буфер ще вантажиться, await почекає)
   playSound("end");
 
   if (recognition) recognition.stop();
@@ -198,6 +203,7 @@ chrome.runtime.onMessage.addListener((message, sender, sendResponse) => {
     }
     if (recognition) recognition.abort();
 
+    // Ініціалізація
     initRecognition().then((rec) => {
       recognition = rec;
       try {
@@ -208,7 +214,7 @@ chrome.runtime.onMessage.addListener((message, sender, sendResponse) => {
         sendResponse({ started: false, error: e.message });
       }
     });
-    return true;
+    return true; // Keep channel open
   }
 
   if (message.type === MSG.CMD_STOP_SESSION) {

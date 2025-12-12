@@ -1,6 +1,6 @@
 import { MSG } from "../utils/messaging.js";
 
-// console.log("[Golos BG] Router v2.2 Clean UI");
+console.log("[Golos BG] Router v2.8 Robust Retry");
 
 let engineTabId = null;
 let isListening = false;
@@ -33,7 +33,6 @@ async function ensureEngineTab() {
 function setVisualState(state) {
   if (state === "listening") {
     isListening = true;
-    // 🔴 Стан ЗАПИСУ
     chrome.action.setIcon({
       path: {
         16: "/assets/icons/icon-red-16.png",
@@ -42,10 +41,9 @@ function setVisualState(state) {
         128: "/assets/icons/icon-red-128.png",
       },
     });
-    chrome.action.setBadgeText({ text: "" }); // Прибираємо текст
+    chrome.action.setBadgeText({ text: "" });
   } else if (state === "idle") {
     isListening = false;
-    // 🟢 Стан СПОКОЮ
     chrome.action.setIcon({
       path: {
         16: "/assets/icons/icon-green-16.png",
@@ -57,21 +55,46 @@ function setVisualState(state) {
     chrome.action.setBadgeText({ text: "" });
   } else if (state === "error") {
     isListening = false;
-    // ⚠️ Помилка
     chrome.action.setBadgeText({ text: "ERR" });
     chrome.action.setBadgeBackgroundColor({ color: "#000000" });
   }
 }
 
-// --- 3. Головний перемикач (Toggle) ---
+// --- 3. Функція гарантованої доставки (Retry Logic) ---
+async function sendMessageToEngineWithRetry(
+  message,
+  maxRetries = 10,
+  interval = 300
+) {
+  for (let i = 0; i < maxRetries; i++) {
+    try {
+      if (!engineTabId) throw new Error("No engine tab ID");
+
+      // Пробуємо відправити
+      const response = await chrome.tabs.sendMessage(engineTabId, message);
+      return response; // Якщо успіх - повертаємо результат
+    } catch (e) {
+      console.warn(
+        `[Golos BG] Engine not ready (attempt ${i + 1}/${maxRetries})...`
+      );
+      // Чекаємо перед наступною спробою
+      await new Promise((resolve) => setTimeout(resolve, interval));
+    }
+  }
+  throw new Error("Engine tab failed to respond after retries");
+}
+
+// --- 4. Головний перемикач (Toggle) ---
 
 async function toggleSession() {
-  // Перевіряємо поточний стан
   if (isListening) {
     // === STOP ===
     console.log("[Golos BG] Action: STOP");
     if (engineTabId) {
-      chrome.tabs.sendMessage(engineTabId, { type: MSG.CMD_STOP_SESSION });
+      // Тут ретрай не критичний, бо двигун вже працює
+      chrome.tabs
+        .sendMessage(engineTabId, { type: MSG.CMD_STOP_SESSION })
+        .catch(() => {});
       setVisualState("idle");
     }
   } else {
@@ -85,7 +108,6 @@ async function toggleSession() {
     });
     const activeTab = tabs[0];
 
-    // Перевірка на системні сторінки
     if (!activeTab || !activeTab.id || activeTab.url.startsWith("chrome://")) {
       console.warn("Cannot dictate on this tab");
       chrome.action.setBadgeText({ text: "ERR" });
@@ -93,50 +115,49 @@ async function toggleSession() {
       return;
     }
 
-    // 2. ПИТАЄМО сторінку: "Чи є куди писати?"
+    // 2. ПИТАЄМО сторінку
     try {
       const response = await chrome.tabs.sendMessage(activeTab.id, {
-        type: MSG.CMD_PING_WIDGET, // Використовуємо правильну константу
+        type: MSG.CMD_PING_WIDGET,
       });
 
       if (!response || !response.ok) {
-        console.warn("[Golos BG] Page said NO (no input field).");
+        console.warn("[Golos BG] Page said NO.");
         chrome.action.setBadgeText({ text: "NO" });
         setTimeout(() => chrome.action.setBadgeText({ text: "" }), 1500);
         return;
       }
     } catch (err) {
-      // ОБРОБКА ПОМИЛКИ "Receiving end does not exist"
-      console.warn(
-        "[Golos BG] Connection failed. User needs to reload tab.",
-        err
-      );
-
-      // Візуальна підказка користувачу
-      chrome.action.setBadgeText({ text: "↻" }); // Значок оновлення
-      chrome.action.setBadgeBackgroundColor({ color: "#f59e0b" }); // Жовтий
-
-      // Скидаємо через 2 секунди
+      console.warn("[Golos BG] User needs to reload tab.", err);
+      chrome.action.setBadgeText({ text: "↻" });
+      chrome.action.setBadgeBackgroundColor({ color: "#f59e0b" });
       setTimeout(() => chrome.action.setBadgeText({ text: "" }), 2000);
       return;
     }
 
     // 3. Запускаємо двигун
-    ensureEngineTab().then((engId) => {
-      if (!engId) return;
+    const engId = await ensureEngineTab();
+    if (!engId) return;
 
-      // Ставимо статус ЗАРАЗ
-      setVisualState("listening");
+    // Ставимо візуал, що ми "в процесі"
+    setVisualState("listening");
 
-      chrome.tabs.sendMessage(engId, {
+    // 🔥 ВІДПРАВЛЯЄМО КОМАНДУ З ПОВТОРАМИ (Fix для "глухого" старту)
+    try {
+      await sendMessageToEngineWithRetry({
         type: MSG.CMD_START_SESSION,
         targetTabId: activeTab.id,
       });
-    });
+      console.log("[Golos BG] Engine started successfully.");
+    } catch (error) {
+      console.error("[Golos BG] Failed to start Engine:", error);
+      setVisualState("error");
+      setTimeout(() => setVisualState("idle"), 2000);
+    }
   }
 }
 
-// --- 4. Listeners ---
+// --- 5. Listeners ---
 
 chrome.action.onClicked.addListener((tab) => {
   toggleSession();
@@ -149,7 +170,7 @@ chrome.commands.onCommand.addListener((command) => {
 });
 
 chrome.runtime.onMessage.addListener((message, sender, sendResponse) => {
-  // Якщо віджет просить зупинитись (хрестик)
+  // Stop від віджета
   if (message.type === MSG.CMD_STOP_SESSION) {
     if (engineTabId) {
       chrome.tabs.sendMessage(engineTabId, { type: MSG.CMD_STOP_SESSION });
@@ -157,18 +178,16 @@ chrome.runtime.onMessage.addListener((message, sender, sendResponse) => {
     }
   }
 
-  // Транзит даних (Engine <-> Content)
+  // Транзит Engine <-> Content
   if (
     message.type === MSG.EVENT_TRANSCRIPT ||
     message.type === MSG.EVENT_STATE_CHANGE
   ) {
-    // Синхронізація UI при авто-стопі
     if (message.type === MSG.EVENT_STATE_CHANGE) {
       if (message.state === "idle" || message.state === "error") {
         setVisualState("idle");
       }
     }
-    // Пересилаємо повідомлення на цільову вкладку
     const destTabId = message.targetTabId;
     if (destTabId) {
       chrome.tabs.sendMessage(destTabId, message).catch(() => {});
@@ -176,7 +195,6 @@ chrome.runtime.onMessage.addListener((message, sender, sendResponse) => {
   }
 });
 
-// --- Контекстне меню ---
 chrome.runtime.onInstalled.addListener(() => {
   ensureEngineTab();
   chrome.contextMenus.create({
@@ -184,7 +202,7 @@ chrome.runtime.onInstalled.addListener(() => {
     title: "⚙️ Налаштування Golos",
     contexts: ["all"],
   });
-  setVisualState("idle"); // Скидаємо іконку при старті
+  setVisualState("idle");
 });
 
 chrome.contextMenus.onClicked.addListener((info, tab) => {
@@ -193,7 +211,6 @@ chrome.contextMenus.onClicked.addListener((info, tab) => {
   }
 });
 
-// --- Авто-стоп при зміні вкладки ---
 chrome.tabs.onActivated.addListener(async (activeInfo) => {
   if (isListening) {
     console.log("[Golos BG] Tab changed. Auto-stopping session.");
