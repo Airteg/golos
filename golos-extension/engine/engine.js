@@ -2,10 +2,16 @@ import { MSG } from "../utils/messaging.js";
 
 console.log("[Golos Engine] Ready to listen.");
 
-let recognition = null; // SpeechRecognition instance
-let currentTargetTabId = null; // Tab ID to send transcripts to
-let silenceTimer = null; // Timer for silence detection
-const SILENCE_TIMEOUT_MS = 20000; // 20 seconds
+let recognition = null;
+let currentTargetTabId = null;
+
+// Таймер тиші
+let silenceTimer = null;
+const SILENCE_TIMEOUT_MS = 20000;
+
+// Таймер самознищення вкладки
+let shutdownTimer = null;
+const SHUTDOWN_TIMEOUT_MS = 90000; // 90 секунд
 
 // --- СЛОВНИК МАКРОСІВ ---
 const MACROS = {
@@ -23,7 +29,6 @@ const MACROS = {
   смайлик: "🙂",
 };
 
-// TODO --- ФУНКЦІЯ ЗАСТОСУВАННЯ МАКРОСІВ працює некоректно з деякими розділовими знаками ---
 function applyMacros(text) {
   if (!text) return text;
 
@@ -33,7 +38,6 @@ function applyMacros(text) {
   for (const [key, value] of Object.entries(MACROS)) {
     const regex = new RegExp(`(^|\\s)${key}(?=$|\\s|[.,?!])`, "gi");
     processed = processed.replace(regex, (match, prefix) => {
-      // Якщо це розділовий знак, ми не хочемо пробіл перед ним (окрім дужки відкриття)
       if ([".", ",", "?", "!", ":", ")"].includes(value)) {
         return value;
       }
@@ -41,15 +45,9 @@ function applyMacros(text) {
     });
   }
 
-  // 2. Чистка пробілів (FIX для дужок)
-
-  // Прибрати пробіли ПЕРЕД: . , ! ? : )
+  // 2. Чистка пробілів
   processed = processed.replace(/\s+([.,?!:);])/g, "$1");
-
-  // Прибрати пробіли ПІСЛЯ: (
   processed = processed.replace(/(\()\s+/g, "$1");
-
-  // Додати пробіл ПІСЛЯ коми/крапки, якщо його немає (наприклад "привіт,як")
   processed = processed.replace(/([.,?!:;])(?=[^\s])/g, "$1 ");
 
   return processed;
@@ -71,14 +69,33 @@ async function initRecognition() {
 
   rec.onstart = () => {
     console.log("[Golos Engine] ON");
+
     sendState("listening");
     resetSilenceTimer();
+
+    // Якщо почали говорити - скасовуємо закриття вкладки
+    if (shutdownTimer) {
+      clearTimeout(shutdownTimer);
+      shutdownTimer = null;
+    }
   };
 
   rec.onend = () => {
     console.log("[Golos Engine] OFF");
+
     sendState("idle");
     clearTimeout(silenceTimer);
+
+    // Запускаємо таймер закриття вкладки
+    console.log(
+      `[Golos Engine] Closing tab in ${
+        SHUTDOWN_TIMEOUT_MS / 1000
+      }s if inactive...`
+    );
+    shutdownTimer = setTimeout(() => {
+      console.log("[Golos Engine] Auto-closing tab.");
+      window.close();
+    }, SHUTDOWN_TIMEOUT_MS);
   };
 
   rec.onresult = (event) => {
@@ -96,10 +113,8 @@ async function initRecognition() {
       }
     }
 
-    // ЗАСТОСОВУЄМО МАКРОС ТІЛЬКИ ДО ФІНАЛЬНОГО ТЕКСТУ
     if (final) {
       final = applyMacros(final);
-      // Капіталізація першої літери фінального тексту
       final = final.charAt(0).toUpperCase() + final.slice(1);
     }
 
@@ -118,6 +133,7 @@ async function initRecognition() {
   };
   return rec;
 }
+
 // --- ТАЙМЕР БЕЗДІЯЛЬНОСТІ ---
 function resetSilenceTimer() {
   clearTimeout(silenceTimer);
@@ -126,11 +142,13 @@ function resetSilenceTimer() {
     stopSession();
   }, SILENCE_TIMEOUT_MS);
 }
+
 // --- ЗУПИНКА СЕСІЇ ---
 function stopSession() {
   if (recognition) recognition.stop();
   updateStatusUI("Idle");
 }
+
 // --- ВІДПРАВКА СТАНУ ---
 function sendState(state) {
   if (currentTargetTabId) {
@@ -141,10 +159,18 @@ function sendState(state) {
     });
   }
 }
+
 // --- ОБРОБКА ПОВІДОМЛЕНЬ ---
 chrome.runtime.onMessage.addListener((message) => {
   if (message.type === MSG.CMD_START_SESSION) {
     currentTargetTabId = message.targetTabId;
+
+    // При ручному старті теж скасовуємо закриття
+    if (shutdownTimer) {
+      clearTimeout(shutdownTimer);
+      shutdownTimer = null;
+    }
+
     if (recognition) recognition.abort();
     initRecognition().then((rec) => {
       recognition = rec;
@@ -157,7 +183,7 @@ chrome.runtime.onMessage.addListener((message) => {
   }
   if (message.type === MSG.CMD_STOP_SESSION) stopSession();
 });
-// --- UI СТАТУС ---
+
 function updateStatusUI(text) {
   const el = document.getElementById("status");
   if (el) el.textContent = text;
