@@ -1,19 +1,56 @@
 import { MSG } from "../utils/messaging.js";
 
-console.log("[Golos Engine] Ready to listen.");
+console.log("[Golos Engine] Ready v2.7 Instant Feedback Clean");
+
+// --- АУДІО СИСТЕМА (Web Audio API) ---
+const audioCtx = new (window.AudioContext || window.webkitAudioContext)();
+const soundBuffers = {};
+
+async function loadSound(name, url) {
+  try {
+    const response = await fetch(url);
+    if (!response.ok) throw new Error(`HTTP ${response.status}`);
+    const arrayBuffer = await response.arrayBuffer();
+    const audioBuffer = await audioCtx.decodeAudioData(arrayBuffer);
+    soundBuffers[name] = audioBuffer;
+    console.log(`[Golos Engine] Buffer loaded: ${name}`);
+  } catch (e) {
+    console.error(`[Golos Engine] Failed to load ${name} (${url}):`, e);
+  }
+}
+
+// Завантаження звуків (IIFE)
+(async () => {
+  await loadSound("start", chrome.runtime.getURL("assets/sounds/on.mp3"));
+  await loadSound("end", chrome.runtime.getURL("assets/sounds/off.mp3"));
+  await loadSound("error", chrome.runtime.getURL("assets/sounds/error.mp3"));
+})();
+
+function playSound(type) {
+  if (audioCtx.state === "suspended") {
+    audioCtx.resume();
+  }
+  const buffer = soundBuffers[type];
+  if (buffer) {
+    const source = audioCtx.createBufferSource();
+    source.buffer = buffer;
+    source.connect(audioCtx.destination);
+    source.start(0);
+  }
+}
+
+// --- ГОЛОВНА ЛОГІКА ---
 
 let recognition = null;
 let currentTargetTabId = null;
-
-// Таймер тиші
 let silenceTimer = null;
 const SILENCE_TIMEOUT_MS = 20000;
-
-// Таймер самознищення вкладки
 let shutdownTimer = null;
-const SHUTDOWN_TIMEOUT_MS = 90000; // 90 секунд
+const SHUTDOWN_TIMEOUT_MS = 90000;
 
-// --- СЛОВНИК МАКРОСІВ ---
+// Прапорець, щоб уникнути подвійного звуку
+let isManuallyStopped = false;
+
 const MACROS = {
   кома: ",",
   крапка: ".",
@@ -31,29 +68,20 @@ const MACROS = {
 
 function applyMacros(text) {
   if (!text) return text;
-
   let processed = text;
-
-  // 1. Заміна слів на символи
   for (const [key, value] of Object.entries(MACROS)) {
     const regex = new RegExp(`(^|\\s)${key}(?=$|\\s|[.,?!])`, "gi");
     processed = processed.replace(regex, (match, prefix) => {
-      if ([".", ",", "?", "!", ":", ")"].includes(value)) {
-        return value;
-      }
+      if ([".", ",", "?", "!", ":", ")"].includes(value)) return value;
       return prefix + value;
     });
   }
-
-  // 2. Чистка пробілів
   processed = processed.replace(/\s+([.,?!:);])/g, "$1");
   processed = processed.replace(/(\()\s+/g, "$1");
   processed = processed.replace(/([.,?!:;])(?=[^\s])/g, "$1 ");
-
   return processed;
 }
 
-// --- ІНІЦІАЛІЗАЦІЯ РОЗПІЗНАВАННЯ ---
 async function initRecognition() {
   const SpeechRecognition =
     window.SpeechRecognition || window.webkitSpeechRecognition;
@@ -69,11 +97,10 @@ async function initRecognition() {
 
   rec.onstart = () => {
     console.log("[Golos Engine] ON");
-
+    isManuallyStopped = false;
+    playSound("start");
     sendState("listening");
     resetSilenceTimer();
-
-    // Якщо почали говорити - скасовуємо закриття вкладки
     if (shutdownTimer) {
       clearTimeout(shutdownTimer);
       shutdownTimer = null;
@@ -81,43 +108,34 @@ async function initRecognition() {
   };
 
   rec.onend = () => {
-    console.log("[Golos Engine] OFF");
+    console.log("[Golos Engine] OFF (onend triggered)");
+
+    // ГРАЄМО ЗВУК ТІЛЬКИ ЯКЩО МИ ЩЕ НЕ ЗУПИНИЛИ ЙОГО ВРУЧНУ
+    if (!isManuallyStopped) {
+      playSound("end");
+    }
+    isManuallyStopped = false;
 
     sendState("idle");
     clearTimeout(silenceTimer);
-
-    // Запускаємо таймер закриття вкладки
-    console.log(
-      `[Golos Engine] Closing tab in ${
-        SHUTDOWN_TIMEOUT_MS / 1000
-      }s if inactive...`
-    );
     shutdownTimer = setTimeout(() => {
-      console.log("[Golos Engine] Auto-closing tab.");
       window.close();
     }, SHUTDOWN_TIMEOUT_MS);
   };
 
   rec.onresult = (event) => {
     resetSilenceTimer();
-
     let interim = "";
     let final = "";
-
     for (let i = event.resultIndex; i < event.results.length; i++) {
       const res = event.results[i];
-      if (res.isFinal) {
-        final += res[0].transcript;
-      } else {
-        interim += res[0].transcript;
-      }
+      if (res.isFinal) final += res[0].transcript;
+      else interim += res[0].transcript;
     }
-
     if (final) {
       final = applyMacros(final);
       final = final.charAt(0).toUpperCase() + final.slice(1);
     }
-
     if (currentTargetTabId) {
       chrome.runtime.sendMessage({
         type: MSG.EVENT_TRANSCRIPT,
@@ -129,27 +147,36 @@ async function initRecognition() {
   };
 
   rec.onerror = (e) => {
-    if (e.error !== "no-speech") sendState("error");
+    if (e.error !== "no-speech") {
+      sendState("error");
+      playSound("error");
+    }
   };
   return rec;
 }
 
-// --- ТАЙМЕР БЕЗДІЯЛЬНОСТІ ---
 function resetSilenceTimer() {
   clearTimeout(silenceTimer);
   silenceTimer = setTimeout(() => {
-    console.log("[Golos Engine] Silence stop.");
+    console.log("[Golos Engine] Silence timeout -> Stopping");
     stopSession();
   }, SILENCE_TIMEOUT_MS);
 }
 
-// --- ЗУПИНКА СЕСІЇ ---
+// --- ГОЛОВНА ФУНКЦІЯ ЗУПИНКИ ---
 function stopSession() {
+  console.log("[Golos Engine] stopSession called");
+
+  isManuallyStopped = true;
+
+  // Граємо звук НЕГАЙНО
+  playSound("end");
+
   if (recognition) recognition.stop();
+
   updateStatusUI("Idle");
 }
 
-// --- ВІДПРАВКА СТАНУ ---
 function sendState(state) {
   if (currentTargetTabId) {
     chrome.runtime.sendMessage({
@@ -160,28 +187,34 @@ function sendState(state) {
   }
 }
 
-// --- ОБРОБКА ПОВІДОМЛЕНЬ ---
-chrome.runtime.onMessage.addListener((message) => {
+chrome.runtime.onMessage.addListener((message, sender, sendResponse) => {
   if (message.type === MSG.CMD_START_SESSION) {
     currentTargetTabId = message.targetTabId;
+    isManuallyStopped = false;
 
-    // При ручному старті теж скасовуємо закриття
     if (shutdownTimer) {
       clearTimeout(shutdownTimer);
       shutdownTimer = null;
     }
-
     if (recognition) recognition.abort();
+
     initRecognition().then((rec) => {
       recognition = rec;
       try {
         recognition.start();
         updateStatusUI(`Listening ${currentTargetTabId}`);
-      } catch (e) {}
+        sendResponse({ started: true });
+      } catch (e) {
+        sendResponse({ started: false, error: e.message });
+      }
     });
     return true;
   }
-  if (message.type === MSG.CMD_STOP_SESSION) stopSession();
+
+  if (message.type === MSG.CMD_STOP_SESSION) {
+    stopSession();
+    sendResponse({ stopped: true });
+  }
 });
 
 function updateStatusUI(text) {

@@ -1,8 +1,9 @@
 import { MSG } from "../utils/messaging.js";
 
-// console.log("[Golos BG] Router v2.1 Fixed");
+// console.log("[Golos BG] Router v2.2 Clean UI");
 
 let engineTabId = null;
+let isListening = false;
 
 // --- 1. Керування вкладкою-двигуном ---
 
@@ -30,9 +31,8 @@ async function ensureEngineTab() {
 // --- 2. Візуалізація стану ---
 
 function setVisualState(state) {
-  // state: 'idle' | 'listening' | 'error'
-
   if (state === "listening") {
+    isListening = true;
     // 🔴 Стан ЗАПИСУ
     chrome.action.setIcon({
       path: {
@@ -42,10 +42,9 @@ function setVisualState(state) {
         128: "/assets/icons/icon-red-128.png",
       },
     });
-    //! ВАЖЛИВО: Залишаємо "ON", бо на ньому тримається логіка перемикача!
-    chrome.action.setBadgeText({ text: "ON" });
-    chrome.action.setBadgeBackgroundColor({ color: "#ef4444" });
+    chrome.action.setBadgeText({ text: "" }); // Прибираємо текст
   } else if (state === "idle") {
+    isListening = false;
     // 🟢 Стан СПОКОЮ
     chrome.action.setIcon({
       path: {
@@ -55,9 +54,9 @@ function setVisualState(state) {
         128: "/assets/icons/icon-green-128.png",
       },
     });
-    // Прибираємо текст
     chrome.action.setBadgeText({ text: "" });
   } else if (state === "error") {
+    isListening = false;
     // ⚠️ Помилка
     chrome.action.setBadgeText({ text: "ERR" });
     chrome.action.setBadgeBackgroundColor({ color: "#000000" });
@@ -67,16 +66,12 @@ function setVisualState(state) {
 // --- 3. Головний перемикач (Toggle) ---
 
 async function toggleSession() {
-  // Джерело правди — текст на бейджі
-  const badgeText = await chrome.action.getBadgeText({});
-  const isRunning = badgeText === "ON";
-
-  if (isRunning) {
+  // Перевіряємо поточний стан
+  if (isListening) {
     // === STOP ===
     console.log("[Golos BG] Action: STOP");
     if (engineTabId) {
       chrome.tabs.sendMessage(engineTabId, { type: MSG.CMD_STOP_SESSION });
-      // Примусово скидаємо візуал, не чекаючи відповіді
       setVisualState("idle");
     }
   } else {
@@ -101,7 +96,7 @@ async function toggleSession() {
     // 2. ПИТАЄМО сторінку: "Чи є куди писати?"
     try {
       const response = await chrome.tabs.sendMessage(activeTab.id, {
-        type: "CMD_ShowWidget",
+        type: MSG.CMD_PING_WIDGET, // Використовуємо правильну константу
       });
 
       if (!response || !response.ok) {
@@ -111,9 +106,18 @@ async function toggleSession() {
         return;
       }
     } catch (err) {
-      console.warn("[Golos BG] Content script not ready or error:", err);
-      // Якщо скрипт не відповів — пробуємо перезавантажити його (або просто показуємо помилку)
-      chrome.action.setBadgeText({ text: "?" });
+      // ОБРОБКА ПОМИЛКИ "Receiving end does not exist"
+      console.warn(
+        "[Golos BG] Connection failed. User needs to reload tab.",
+        err
+      );
+
+      // Візуальна підказка користувачу
+      chrome.action.setBadgeText({ text: "↻" }); // Значок оновлення
+      chrome.action.setBadgeBackgroundColor({ color: "#f59e0b" }); // Жовтий
+
+      // Скидаємо через 2 секунди
+      setTimeout(() => chrome.action.setBadgeText({ text: "" }), 2000);
       return;
     }
 
@@ -121,7 +125,7 @@ async function toggleSession() {
     ensureEngineTab().then((engId) => {
       if (!engId) return;
 
-      // Ставимо статус ЗАРАЗ, щоб інтерфейс відгукнувся миттєво
+      // Ставимо статус ЗАРАЗ
       setVisualState("listening");
 
       chrome.tabs.sendMessage(engId, {
@@ -134,19 +138,16 @@ async function toggleSession() {
 
 // --- 4. Listeners ---
 
-// Клік по іконці (ЛКМ)
 chrome.action.onClicked.addListener((tab) => {
   toggleSession();
 });
 
-// Гаряча клавіша
 chrome.commands.onCommand.addListener((command) => {
   if (command === "golos-process-selection") {
     toggleSession();
   }
 });
 
-// Слухач повідомлень
 chrome.runtime.onMessage.addListener((message, sender, sendResponse) => {
   // Якщо віджет просить зупинитись (хрестик)
   if (message.type === MSG.CMD_STOP_SESSION) {
@@ -163,7 +164,6 @@ chrome.runtime.onMessage.addListener((message, sender, sendResponse) => {
   ) {
     // Синхронізація UI при авто-стопі
     if (message.type === MSG.EVENT_STATE_CHANGE) {
-      // Якщо engine сам перейшов у idle (таймаут) -> оновлюємо іконку
       if (message.state === "idle" || message.state === "error") {
         setVisualState("idle");
       }
@@ -176,7 +176,7 @@ chrome.runtime.onMessage.addListener((message, sender, sendResponse) => {
   }
 });
 
-// --- Контекстне меню (Settings) ---
+// --- Контекстне меню ---
 chrome.runtime.onInstalled.addListener(() => {
   ensureEngineTab();
   chrome.contextMenus.create({
@@ -184,8 +184,9 @@ chrome.runtime.onInstalled.addListener(() => {
     title: "⚙️ Налаштування Golos",
     contexts: ["all"],
   });
+  setVisualState("idle"); // Скидаємо іконку при старті
 });
-// Обробка кліку по пункту меню
+
 chrome.contextMenus.onClicked.addListener((info, tab) => {
   if (info.menuItemId === "open-settings") {
     chrome.runtime.openOptionsPage();
@@ -194,10 +195,7 @@ chrome.contextMenus.onClicked.addListener((info, tab) => {
 
 // --- Авто-стоп при зміні вкладки ---
 chrome.tabs.onActivated.addListener(async (activeInfo) => {
-  const badgeText = await chrome.action.getBadgeText({});
-  const isRunning = badgeText === "ON";
-
-  if (isRunning) {
+  if (isListening) {
     console.log("[Golos BG] Tab changed. Auto-stopping session.");
     if (engineTabId) {
       chrome.tabs.sendMessage(engineTabId, { type: MSG.CMD_STOP_SESSION });
@@ -206,5 +204,7 @@ chrome.tabs.onActivated.addListener(async (activeInfo) => {
   }
 });
 
-// Старт
-chrome.runtime.onStartup.addListener(() => ensureEngineTab());
+chrome.runtime.onStartup.addListener(() => {
+  ensureEngineTab();
+  setVisualState("idle");
+});

@@ -31,6 +31,8 @@
       "resources": [
         "engine/engine.html",
         "assets/styles.css",
+        "assets/icons/*.png",
+        "assets/sounds/*.mp3",
         "assets/*",
         "utils/messaging.js",
         "content/dom-injector.js",

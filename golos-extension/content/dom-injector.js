@@ -9,6 +9,9 @@ export class GolosWidget {
     this.closeBtn = null;
     this._isMounted = false;
     this.onStopCallback = null;
+
+    // ЗВУКІВ ТУТ БІЛЬШЕ НЕМАЄ.
+    // Ми перенесли їх в Engine, щоб обійти блокування Chrome.
   }
 
   onStopClick(callback) {
@@ -17,16 +20,12 @@ export class GolosWidget {
 
   mount() {
     if (this._isMounted) return;
-
     this.host = document.createElement("div");
     this.host.id = "golos-shadow-host";
 
-    // Базові стилі (fixed)
     this.host.style.position = "fixed";
     this.host.style.zIndex = "2147483647";
     this.host.style.display = "block";
-
-    // Тимчасова дефолтна позиція (поки не підтягнеться збережена)
     this.host.style.bottom = "20px";
     this.host.style.right = "20px";
     this.host.style.left = "auto";
@@ -62,7 +61,6 @@ export class GolosWidget {
     this.contentArea = wrapper.querySelector(".golos-content");
     this.closeBtn = wrapper.querySelector(".golos-close");
 
-    // Зупинка
     this.closeBtn.addEventListener("click", (e) => {
       e.stopPropagation();
       if (this.onStopCallback) this.onStopCallback();
@@ -70,45 +68,26 @@ export class GolosWidget {
 
     document.body.appendChild(this.host);
 
-    // Ініціалізація драг-дропу
     const header = wrapper.querySelector(".golos-header");
     this.makeDraggable(header);
-
-    // ВІДНОВЛЕННЯ ПОЗИЦІЇ З ПАМ'ЯТІ
     this.restorePosition();
 
     this._isMounted = true;
   }
 
-  // --- ЛОГІКА ЗБЕРЕЖЕННЯ ---
-
   savePosition(left, top) {
-    // Зберігаємо в сховище Chrome (глобально)
-    chrome.storage.local.set(
-      {
-        golosWidgetPos: { left, top },
-      },
-      () => {
-        // console.log("Position saved:", left, top);
-      }
-    );
+    chrome.storage.local.set({ golosWidgetPos: { left, top } });
   }
 
   restorePosition() {
     chrome.storage.local.get(["golosWidgetPos"], (result) => {
       if (result.golosWidgetPos) {
         const { left, top } = result.golosWidgetPos;
-
-        // Перевірка, щоб не вилетів за екран (наприклад, якщо змінили монітор)
         const winWidth = document.documentElement.clientWidth;
         const winHeight = document.documentElement.clientHeight;
 
-        // Якщо збережені координати виходять за межі поточного вікна - скидаємо в дефолт
-        if (left > winWidth - 50 || top > winHeight - 50) {
-          return; // Залишаємо дефолтний bottom/right
-        }
+        if (left > winWidth - 50 || top > winHeight - 50) return;
 
-        // Застосовуємо збережені координати
         this.host.style.bottom = "auto";
         this.host.style.right = "auto";
         this.host.style.left = left + "px";
@@ -117,7 +96,6 @@ export class GolosWidget {
     });
   }
 
-  // --- ЛОГІКА DRAG & DROP ---
   makeDraggable(triggerElement) {
     const onMouseDown = (e) => {
       if (e.button !== 0) return;
@@ -127,18 +105,15 @@ export class GolosWidget {
       const shiftX = e.clientX - rect.left;
       const shiftY = e.clientY - rect.top;
 
-      // Фіксація початкових координат перед рухом
       this.host.style.bottom = "auto";
       this.host.style.right = "auto";
       this.host.style.left = rect.left + "px";
       this.host.style.top = rect.top + "px";
-
       this.host.style.position = "fixed";
       this.host.style.transition = "none";
 
       const onMouseMove = (moveEvent) => {
         moveEvent.preventDefault();
-
         let newLeft = moveEvent.clientX - shiftX;
         let newTop = moveEvent.clientY - shiftY;
 
@@ -159,8 +134,6 @@ export class GolosWidget {
       const onMouseUp = () => {
         document.removeEventListener("mousemove", onMouseMove);
         document.removeEventListener("mouseup", onMouseUp);
-
-        // ЗБЕРІГАЄМО НОВУ ПОЗИЦІЮ ПРИ ВІДПУСКАННІ
         const finalRect = this.host.getBoundingClientRect();
         this.savePosition(finalRect.left, finalRect.top);
       };
@@ -177,7 +150,6 @@ export class GolosWidget {
     this.contentArea.innerHTML =
       '<span class="golos-placeholder">Говоріть...</span>';
     this.root.classList.remove("golos-hidden");
-    this.setStatusCode("connecting");
   }
 
   hide() {
@@ -191,10 +163,16 @@ export class GolosWidget {
       return;
     }
     this.contentArea.textContent = text;
+    this.contentArea.scrollTop = this.contentArea.scrollHeight;
   }
 
   setStatusCode(code) {
+    // Тільки візуал!
+    console.log("[GolosWidget] status:", code);
+    if (!this.statusDot) return;
+
     this.statusDot.className = "golos-dot";
+
     switch (code) {
       case "listening":
         this.statusDot.classList.add("listening");
@@ -205,6 +183,7 @@ export class GolosWidget {
         break;
       case "error":
         this.statusText.textContent = "Помилка";
+        this.statusDot.classList.add("error");
         break;
       case "connecting":
         this.statusText.textContent = "Запуск...";
