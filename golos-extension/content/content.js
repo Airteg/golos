@@ -43,7 +43,6 @@
           if (el) insertText(el, message.text);
         }
       }
-      return true;
     });
   } catch (err) {
     console.error("[Golos Host] Error:", err);
