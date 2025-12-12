@@ -3,15 +3,26 @@
   "name": "Golos 2.0 (Satellite)",
   "version": "0.1.0",
   "description": "Voice-to-Text Satellite Architecture",
-  "permissions": ["activeTab", "storage", "tabs", "scripting", "contextMenus"],
+  "permissions": ["activeTab", "storage", "tabs", "contextMenus", "offscreen"],
   "host_permissions": ["<all_urls>"],
   "background": {
     "service_worker": "background/service-worker.js",
     "type": "module"
   },
+  "action": {
+    "default_title": "Start Dictation",
+    "default_icon": {
+      "16": "assets/icons/icon-green-16.png",
+      "32": "assets/icons/icon-green-32.png",
+      "48": "assets/icons/icon-green-48.png",
+      "128": "assets/icons/icon-green-128.png"
+    }
+  },
   "commands": {
     "golos-process-selection": {
-      "suggested_key": { "default": "Alt+Shift+G" },
+      "suggested_key": {
+        "default": "Alt+Shift+G"
+      },
       "description": "Start Dictation"
     }
   },
@@ -46,14 +57,5 @@
     "32": "assets/icons/icon-green-32.png",
     "48": "assets/icons/icon-green-48.png",
     "128": "assets/icons/icon-green-128.png"
-  },
-  "action": {
-    "default_title": "Golos: Натисни, щоб диктувати",
-    "default_icon": {
-      "16": "assets/icons/icon-green-16.png",
-      "32": "assets/icons/icon-green-32.png",
-      "48": "assets/icons/icon-green-48.png",
-      "128": "assets/icons/icon-green-128.png"
-    }
   }
 }
