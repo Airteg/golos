@@ -1,6 +1,6 @@
 import { MSG } from "../utils/messaging.js";
 
-console.log("[Golos BG] Router v2.8 Robust Retry");
+console.log("[Golos BG] Router v2.9 Final Polish");
 
 let engineTabId = null;
 let isListening = false;
@@ -72,16 +72,13 @@ async function sendMessageToEngineWithRetry(
 
       // Пробуємо відправити
       const response = await chrome.tabs.sendMessage(engineTabId, message);
-      return response; // Якщо успіх - повертаємо результат
+      return response;
     } catch (e) {
-      console.warn(
-        `[Golos BG] Engine not ready (attempt ${i + 1}/${maxRetries})...`
-      );
-      // Чекаємо перед наступною спробою
+      // console.warn(`[Golos BG] Retry ${i + 1}/${maxRetries} for ${message.type}...`);
       await new Promise((resolve) => setTimeout(resolve, interval));
     }
   }
-  throw new Error("Engine tab failed to respond after retries");
+  throw new Error(`Engine failed to respond to ${message.type}`);
 }
 
 // --- 4. Головний перемикач (Toggle) ---
@@ -91,17 +88,20 @@ async function toggleSession() {
     // === STOP ===
     console.log("[Golos BG] Action: STOP");
     if (engineTabId) {
-      // Тут ретрай не критичний, бо двигун вже працює
-      chrome.tabs
-        .sendMessage(engineTabId, { type: MSG.CMD_STOP_SESSION })
-        .catch(() => {});
+      // ✅ FIX A: Використовуємо Retry і для STOP (5 спроб по 200мс = 1с очікування макс)
+      // Це гарантує, що якщо ми натиснули STOP одразу після START, команда дійде.
+      sendMessageToEngineWithRetry(
+        { type: MSG.CMD_STOP_SESSION },
+        5,
+        200
+      ).catch((err) => console.warn("[Golos BG] Stop failed:", err));
+
       setVisualState("idle");
     }
   } else {
     // === START ===
     console.log("[Golos BG] Action: START");
 
-    // 1. Шукаємо активну вкладку
     const tabs = await chrome.tabs.query({
       active: true,
       lastFocusedWindow: true,
@@ -115,14 +115,12 @@ async function toggleSession() {
       return;
     }
 
-    // 2. ПИТАЄМО сторінку
     try {
       const response = await chrome.tabs.sendMessage(activeTab.id, {
         type: MSG.CMD_PING_WIDGET,
       });
 
       if (!response || !response.ok) {
-        console.warn("[Golos BG] Page said NO.");
         chrome.action.setBadgeText({ text: "NO" });
         setTimeout(() => chrome.action.setBadgeText({ text: "" }), 1500);
         return;
@@ -135,19 +133,21 @@ async function toggleSession() {
       return;
     }
 
-    // 3. Запускаємо двигун
     const engId = await ensureEngineTab();
     if (!engId) return;
 
-    // Ставимо візуал, що ми "в процесі"
     setVisualState("listening");
 
-    // 🔥 ВІДПРАВЛЯЄМО КОМАНДУ З ПОВТОРАМИ (Fix для "глухого" старту)
+    // Відправляємо START з "довгим" Retry (бо вкладка може вантажитись)
     try {
-      await sendMessageToEngineWithRetry({
-        type: MSG.CMD_START_SESSION,
-        targetTabId: activeTab.id,
-      });
+      await sendMessageToEngineWithRetry(
+        {
+          type: MSG.CMD_START_SESSION,
+          targetTabId: activeTab.id,
+        },
+        10,
+        300
+      ); // 10 спроб по 300мс = 3с макс
       console.log("[Golos BG] Engine started successfully.");
     } catch (error) {
       console.error("[Golos BG] Failed to start Engine:", error);
@@ -170,15 +170,18 @@ chrome.commands.onCommand.addListener((command) => {
 });
 
 chrome.runtime.onMessage.addListener((message, sender, sendResponse) => {
-  // Stop від віджета
+  // Stop від віджета (теж з Retry, для надійності)
   if (message.type === MSG.CMD_STOP_SESSION) {
     if (engineTabId) {
-      chrome.tabs.sendMessage(engineTabId, { type: MSG.CMD_STOP_SESSION });
+      sendMessageToEngineWithRetry(
+        { type: MSG.CMD_STOP_SESSION },
+        5,
+        200
+      ).catch(() => {});
       setVisualState("idle");
     }
   }
 
-  // Транзит Engine <-> Content
   if (
     message.type === MSG.EVENT_TRANSCRIPT ||
     message.type === MSG.EVENT_STATE_CHANGE
@@ -215,7 +218,11 @@ chrome.tabs.onActivated.addListener(async (activeInfo) => {
   if (isListening) {
     console.log("[Golos BG] Tab changed. Auto-stopping session.");
     if (engineTabId) {
-      chrome.tabs.sendMessage(engineTabId, { type: MSG.CMD_STOP_SESSION });
+      sendMessageToEngineWithRetry(
+        { type: MSG.CMD_STOP_SESSION },
+        5,
+        200
+      ).catch(() => {});
     }
     setVisualState("idle");
   }

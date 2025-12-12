@@ -1,6 +1,6 @@
 import { MSG } from "../utils/messaging.js";
 
-console.log("[Golos Engine] Ready v2.8 Robust Audio");
+console.log("[Golos Engine] Ready v2.9 Async Stop");
 
 // --- АУДІО СИСТЕМА (Web Audio API) ---
 const audioCtx = new (window.AudioContext || window.webkitAudioContext)();
@@ -19,7 +19,7 @@ async function loadSound(name, url) {
   }
 }
 
-// 🔥 Promise, який гарантує, що звуки готові
+// Гарантія завантаження звуків
 const soundsReadyPromise = Promise.all([
   loadSound("start", chrome.runtime.getURL("assets/sounds/on.mp3")),
   loadSound("end", chrome.runtime.getURL("assets/sounds/off.mp3")),
@@ -27,18 +27,29 @@ const soundsReadyPromise = Promise.all([
 ]);
 
 async function playSound(type) {
-  // Чекаємо завантаження перед програванням
+  // 1. Чекаємо завантаження файлів
   await soundsReadyPromise;
 
+  // 2. БУДИМО КОНТЕКСТ ПРАВИЛЬНО
   if (audioCtx.state === "suspended") {
-    audioCtx.resume();
+    try {
+      await audioCtx.resume(); // <--- ТУТ БУЛА ПОМИЛКА (додали await)
+      console.log("[Golos Engine] AudioContext resumed");
+    } catch (e) {
+      console.error("[Golos Engine] Failed to resume AudioContext:", e);
+    }
   }
+
   const buffer = soundBuffers[type];
   if (buffer) {
+    // Створюємо джерело звуку
     const source = audioCtx.createBufferSource();
     source.buffer = buffer;
     source.connect(audioCtx.destination);
+
+    // Граємо
     source.start(0);
+    // console.log(`[Golos Engine] Playing: ${type}`);
   }
 }
 
@@ -51,7 +62,6 @@ const SILENCE_TIMEOUT_MS = 20000;
 let shutdownTimer = null;
 const SHUTDOWN_TIMEOUT_MS = 90000;
 
-// Прапорець, щоб уникнути подвійного звуку
 let isManuallyStopped = false;
 
 const MACROS = {
@@ -90,7 +100,7 @@ async function initRecognition() {
     window.SpeechRecognition || window.webkitSpeechRecognition;
   if (!SpeechRecognition) return null;
 
-  // Чекаємо звуки перед ініціалізацією
+  // Чекаємо звуки перед стартом, щоб не почати запис "мовчки"
   await soundsReadyPromise;
 
   const { golosLang } = await chrome.storage.sync.get({ golosLang: "uk-UA" });
@@ -115,12 +125,10 @@ async function initRecognition() {
 
   rec.onend = () => {
     console.log("[Golos Engine] OFF (onend)");
-
     if (!isManuallyStopped) {
       playSound("end");
     }
     isManuallyStopped = false;
-
     sendState("idle");
     clearTimeout(silenceTimer);
     shutdownTimer = setTimeout(() => {
@@ -168,15 +176,16 @@ function resetSilenceTimer() {
   }, SILENCE_TIMEOUT_MS);
 }
 
-// --- ГОЛОВНА ФУНКЦІЯ ЗУПИНКИ ---
-function stopSession() {
+// --- ГОЛОВНА ФУНКЦІЯ ЗУПИНКИ (ASYNC) ---
+// ✅ FIX B: Робимо функцію асинхронною, щоб дочекатись звуку
+async function stopSession() {
   console.log("[Golos Engine] stopSession called");
 
   isManuallyStopped = true;
 
-  // Граємо звук (навіть якщо буфер ще вантажиться, await почекає)
-  playSound("end");
-
+  // Чекаємо (await), поки звук реально почне грати (або завантажиться)
+  await playSound("end");
+  await new Promise((r) => setTimeout(r, 120));
   if (recognition) recognition.stop();
 
   updateStatusUI("Idle");
@@ -203,7 +212,6 @@ chrome.runtime.onMessage.addListener((message, sender, sendResponse) => {
     }
     if (recognition) recognition.abort();
 
-    // Ініціалізація
     initRecognition().then((rec) => {
       recognition = rec;
       try {
@@ -214,12 +222,16 @@ chrome.runtime.onMessage.addListener((message, sender, sendResponse) => {
         sendResponse({ started: false, error: e.message });
       }
     });
-    return true; // Keep channel open
+    return true;
   }
 
   if (message.type === MSG.CMD_STOP_SESSION) {
-    stopSession();
-    sendResponse({ stopped: true });
+    // Оскільки stopSession тепер async, ми чекаємо його виконання
+    stopSession().then(() => {
+      sendResponse({ stopped: true });
+    });
+    // Повертаємо true, щоб канал лишався відкритим для асинхронної відповіді
+    return true;
   }
 });
 
