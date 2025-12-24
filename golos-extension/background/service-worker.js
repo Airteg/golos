@@ -41,7 +41,7 @@ async function playSound(filename) {
   }
 }
 
-// 🔥 DEBOUNCE FUNCTION (Твій фікс)
+// 🔥 DEBOUNCE FUNCTION
 function playOff() {
   const now = Date.now();
   // Якщо з минулого "OFF" пройшло менше 500мс - ігноруємо
@@ -196,7 +196,7 @@ chrome.commands.onCommand.addListener((cmd) => {
 chrome.runtime.onMessage.addListener((message, sender, sendResponse) => {
   if (message.type === MSG.CMD_STOP_SESSION) {
     if (isListening) {
-      playOff(); // <--- ФІКС
+      playOff();
       if (engineTabId)
         sendMessageToEngineWithRetry(
           { type: MSG.CMD_STOP_SESSION },
