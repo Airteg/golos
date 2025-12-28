@@ -1,6 +1,6 @@
 import { MSG } from "../utils/messaging.js";
 
-console.log("[Golos Engine] Lite Version (No Audio)");
+console.log("[Golos Engine] Smart Context v2.0");
 
 let recognition = null;
 let currentTargetTabId = null;
@@ -9,7 +9,12 @@ const SILENCE_TIMEOUT_MS = 20000;
 let shutdownTimer = null;
 const SHUTDOWN_TIMEOUT_MS = 90000;
 
-// Оновлений список макросів
+// Стан контексту
+let ctx = {
+  isNewSentence: true, // Чи початок нового речення?
+  hasTrailingSpace: false, // Чи закінчився попередній чанк пробілом?
+};
+
 const MACROS = {
   // Пунктуація
   кома: ",",
@@ -18,7 +23,7 @@ const MACROS = {
   "знак оклику": "!",
   дефіс: "-",
   двокрапка: ":",
-  тире: " —", // довге тире з пробілом перед ним
+  тире: " —",
   "новий рядок": "\n",
   абзац: "\n\n",
   "дужка відкривається": "(",
@@ -28,51 +33,47 @@ const MACROS = {
   // Спецсимволи
   смайлик: "🙂",
   амперсанд: "&",
-  "зворотна коса риска": "\\", // Екранування для JS
+  "зворотна коса риска": "\\",
   "коса риска": "/",
   "центрована точка": "·",
   "знак градуса": "°",
   "нижнє підкреслення": "_",
   "вертикальна риска": "|",
 
-  // Валюти (експериментально, без обробки пробілів)
+  // Валюти (Regex-ready roots)
   долар: "$",
-  "знак долара": "$",
   євро: "€",
-  "знак євро": "€",
   фунт: "£",
-  "знак фунта": "£",
-  гривня: "₴",
-  "знак гривні": "₴",
+  гривн: "₴", // Корінь для гривня, гривні, гривень
 };
+
+// Функція для "розумної" капіталізації
+function smartCapitalize(text, forceCap) {
+  if (!text) return text;
+
+  // Знаходимо першу літеру (пропускаючи пробіли та символи)
+  // Це виправить проблему, коли пробіл ставав UpperCase
+  return text.replace(/^(\s*)([a-zа-яіїєґ])/i, (match, space, char) => {
+    return space + (forceCap ? char.toUpperCase() : char);
+  });
+}
 
 function applyMacros(text) {
   if (!text) return text;
   let processed = text;
 
-  // 1. Заміна слів на символи
+  // 1. Макроси
   for (const [key, value] of Object.entries(MACROS)) {
-    // Шукаємо точний збіг слова, щоб не замінювати частини слів
-    // (^|\s) - початок рядка або пробіл
-    // (?=$|\s|[.,?!]) - кінець рядка, пробіл або розділовий знак
-    const regex = new RegExp(`(^|\\s)${key}(?=$|\\s|[.,?!])`, "gi");
-
-    processed = processed.replace(regex, (match, prefix) => {
-      // Якщо це спецсимвол, який ми не хочемо склеювати з попереднім словом (поки що),
-      // просто повертаємо його.
-      // Для звичайної пунктуації (.,?!:) ми поки лишаємо як є.
-      return prefix + value;
-    });
+    // Покращений Regex: шукає корінь слова + можливі закінчення (для валют)
+    // Наприклад "гривн" зловить "гривня", "гривні", "гривень"
+    const regex = new RegExp(`(^|\\s)${key}[а-яіїєґ]*(?=$|\\s|[.,?!])`, "gi");
+    processed = processed.replace(regex, (match, prefix) => prefix + value);
   }
 
-  // 2. Чистка пробілів
+  // 2. Чистка пунктуації (видалення пробілів перед знаками)
   processed = processed
-    // Видаляємо пробіл перед розділовими знаками
     .replace(/\s+([.,?!:);])/g, "$1")
-    // Видаляємо пробіл після відкриваючої дужки
     .replace(/(\()\s+/g, "$1");
-  // Додаємо пробіл після розділових знаків, якщо його немає
-  // .replace(/([.,?!:;])(?=[^\s])/g, "$1 ");
 
   return processed;
 }
@@ -83,7 +84,6 @@ async function initRecognition() {
   if (!SpeechRecognition) return null;
 
   const { golosLang } = await chrome.storage.sync.get({ golosLang: "uk-UA" });
-  console.log(`[Golos Engine] Lang: ${golosLang}`);
 
   const rec = new SpeechRecognition();
   rec.continuous = true;
@@ -92,12 +92,11 @@ async function initRecognition() {
 
   rec.onstart = () => {
     console.log("[Golos Engine] ON");
+    ctx.isNewSentence = true; // Скидаємо контекст при старті
+    ctx.hasTrailingSpace = false;
     sendState("listening");
     resetSilenceTimer();
-    if (shutdownTimer) {
-      clearTimeout(shutdownTimer);
-      shutdownTimer = null;
-    }
+    if (shutdownTimer) clearTimeout(shutdownTimer);
   };
 
   rec.onend = () => {
@@ -111,44 +110,74 @@ async function initRecognition() {
     resetSilenceTimer();
     let interim = "";
     let final = "";
+
     for (let i = event.resultIndex; i < event.results.length; i++) {
       const res = event.results[i];
       if (res.isFinal) {
         final += res[0].transcript;
-        // DEBUG: Дивимось, що приходить від Chrome для валют
-        console.log(`[RAW FINAL]: '${res[0].transcript}'`);
       } else {
         interim += res[0].transcript;
       }
     }
+
     if (final) {
+      // 1. Зберігаємо оригінальні пробіли від Chrome для аналізу
+      const rawFinal = final;
+
+      // 2. Застосовуємо макроси
       final = applyMacros(final);
-      final = final.charAt(0).toUpperCase() + final.slice(1);
-    }
-    if (currentTargetTabId) {
+
+      // 3. Логіка капіталізації
+      // Якщо це початок нового речення - робимо велику літеру
+      if (ctx.isNewSentence) {
+        final = smartCapitalize(final, true);
+      } else {
+        // Якщо це середина речення, Chrome може все одно дати велику літеру
+        // Можна примусово зменшити, але обережно (власні назви)
+        // Поки що лишаємо як є, або можна зробити smartCapitalize(final, false)
+      }
+
+      // 4. Оновлюємо контекст для наступного чанка
+      const trimmed = final.trim();
+      if (trimmed.length > 0) {
+        const lastChar = trimmed.slice(-1);
+        // Якщо закінчується на . ? ! — наступний чанк буде з великої
+        if ([".", "?", "!", "\n"].includes(lastChar)) {
+          ctx.isNewSentence = true;
+        } else {
+          ctx.isNewSentence = false;
+        }
+      }
+
+      // Відправляємо
+      if (currentTargetTabId) {
+        chrome.runtime.sendMessage({
+          type: MSG.EVENT_TRANSCRIPT,
+          text: final,
+          isFinal: true,
+          targetTabId: currentTargetTabId,
+        });
+      }
+    } else if (interim) {
+      // Для interim просто шлемо як є
       chrome.runtime.sendMessage({
         type: MSG.EVENT_TRANSCRIPT,
-        text: final || interim,
-        isFinal: !!final,
+        text: interim,
+        isFinal: false,
         targetTabId: currentTargetTabId,
       });
     }
   };
 
   rec.onerror = (e) => {
-    if (e.error !== "no-speech") {
-      sendState("error");
-    }
+    if (e.error !== "no-speech") sendState("error");
   };
   return rec;
 }
 
 function resetSilenceTimer() {
   clearTimeout(silenceTimer);
-  silenceTimer = setTimeout(() => {
-    console.log("[Golos Engine] Silence timeout");
-    stopSession();
-  }, SILENCE_TIMEOUT_MS);
+  silenceTimer = setTimeout(() => stopSession(), SILENCE_TIMEOUT_MS);
 }
 
 function stopSession() {
@@ -168,10 +197,7 @@ function sendState(state) {
 chrome.runtime.onMessage.addListener((message, sender, sendResponse) => {
   if (message.type === MSG.CMD_START_SESSION) {
     currentTargetTabId = message.targetTabId;
-    if (shutdownTimer) {
-      clearTimeout(shutdownTimer);
-      shutdownTimer = null;
-    }
+    if (shutdownTimer) clearTimeout(shutdownTimer);
     if (recognition) recognition.abort();
 
     initRecognition().then((rec) => {
@@ -185,7 +211,6 @@ chrome.runtime.onMessage.addListener((message, sender, sendResponse) => {
     });
     return true;
   }
-
   if (message.type === MSG.CMD_STOP_SESSION) {
     stopSession();
     sendResponse({ stopped: true });

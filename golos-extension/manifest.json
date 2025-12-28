@@ -47,7 +47,8 @@
         "assets/*",
         "utils/messaging.js",
         "content/dom-injector.js",
-        "content/input-simulator.js"
+        "content/input-simulator.js",
+        "test/*"
       ],
       "matches": ["<all_urls>"]
     }

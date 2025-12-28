@@ -1,0 +1,71 @@
+<!DOCTYPE html>
+<html lang="uk">
+  <head>
+    <meta charset="UTF-8" />
+    <title>Golos Debug Page</title>
+    <style>
+      body {
+        font-family: sans-serif;
+        padding: 30px;
+        max-width: 600px;
+        margin: 0 auto;
+      }
+      .test-block {
+        margin-bottom: 25px;
+        padding: 15px;
+        border: 1px solid #ddd;
+        border-radius: 8px;
+        background-color: #f9f9f9;
+      }
+      label {
+        font-weight: bold;
+        display: block;
+        margin-bottom: 5px;
+      }
+      input,
+      textarea {
+        width: 100%;
+        padding: 8px;
+        box-sizing: border-box;
+      }
+      .editable {
+        border: 2px dashed #007bff;
+        padding: 10px;
+        min-height: 40px;
+        background: white;
+      }
+    </style>
+
+    <script src="utils.js"></script>
+    <script type="module" src="harness.js"></script>
+  </head>
+  <body>
+    <h1>Тест розширення Golos</h1>
+    <p>
+      Клікни в будь-яке поле, щоб зробити його активним (activeElement), а потім
+      натисни Run tests.
+    </p>
+
+    <div class="test-block">
+      <label>1. Звичайний Input:</label>
+      <input type="text" value="Привіт, це тест інпуту!" />
+    </div>
+
+    <div class="test-block">
+      <label>2. Textarea:</label>
+      <textarea rows="3">Тут багато тексту для перевірки textarea.</textarea>
+    </div>
+
+    <div class="test-block">
+      <label>3. ContentEditable div:</label>
+      <div class="editable" contenteditable="true">
+        Це редагований <b>DIV</b>. Спробуй змінити цей текст.
+      </div>
+    </div>
+
+    <div class="test-block" tabindex="0">
+      <label>4. Просто блок (фокус сюди):</label>
+      Цей текст не редагується. Скрипт має сказати, що це не input.
+    </div>
+  </body>
+</html>
