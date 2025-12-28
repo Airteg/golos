@@ -1,9 +1,6 @@
-// test/harness.js
-
-// 1. ІМПОРТ РЕАЛЬНОГО КОДУ (Це працює тільки тут, у JS файлі)
 import { insertText, getActiveEditable } from "../content/input-simulator.js";
 
-// Робимо функції доступними глобально для налагодження в консолі (якщо треба)
+// Expose logic
 window.insertText = insertText;
 window.getActiveEditable = getActiveEditable;
 
@@ -18,7 +15,7 @@ window.getActiveEditable = getActiveEditable;
     if (el.selectionStart !== undefined) {
       const n = el.value.length;
       el.selectionStart = el.selectionEnd = n;
-    } else if (el.isContentEditable) {
+    } else {
       const range = document.createRange();
       range.selectNodeContents(el);
       range.collapse(false);
@@ -28,10 +25,68 @@ window.getActiveEditable = getActiveEditable;
     }
   }
 
+  // === CE: детерміноване формування DOM + детермінована позиція курсора ===
+  function setValueCE(el, v) {
+    el.innerHTML = "";
+    el.focus();
+
+    const parts = v.split("\n");
+
+    // Будуємо DOM: TextNode + <br> + TextNode ...
+    parts.forEach((p, i) => {
+      el.appendChild(document.createTextNode(p)); // важливо: додаємо навіть порожній
+      if (i < parts.length - 1) el.appendChild(document.createElement("br"));
+    });
+
+    const sel = window.getSelection();
+    const range = document.createRange();
+
+    // Якщо є хоча б один перенос — ставимо курсор на початок другої "лінії"
+    // (тобто після <br>, перед другим TextNode).
+    // Так ми тестуємо саме "після newline" в реальній позиції каретки.
+    if (parts.length > 1) {
+      // Структура гарантована нашим генератором:
+      // [TextNode(line0), <br>, TextNode(line1), <br>, TextNode(line2) ...]
+      const secondTextNode = el.childNodes[2]; // 0=text, 1=br, 2=text
+      range.setStart(secondTextNode, 0);
+      range.collapse(true);
+    } else {
+      // Стандартна поведінка — в кінець
+      range.selectNodeContents(el);
+      range.collapse(false);
+    }
+
+    sel.removeAllRanges();
+    sel.addRange(range);
+  }
+
   function setValue(el, v) {
-    if (el.value !== undefined) el.value = v;
-    else el.innerText = v;
-    setCursorEnd(el);
+    if (el instanceof HTMLInputElement || el instanceof HTMLTextAreaElement) {
+      el.value = v;
+      setCursorEnd(el);
+    } else {
+      setValueCE(el, v);
+    }
+  }
+
+  // === Надійне читання CE DOM замість innerText ===
+  function readValueCE(el) {
+    let out = "";
+    for (const n of el.childNodes) {
+      if (n.nodeType === Node.TEXT_NODE) {
+        out += n.textContent;
+      } else if (n.nodeType === Node.ELEMENT_NODE && n.tagName === "BR") {
+        out += "\n";
+      } else if (n.nodeType === Node.ELEMENT_NODE) {
+        out += n.textContent;
+      }
+    }
+    return out;
+  }
+
+  function readValue(el) {
+    if (el.value !== undefined) return el.value;
+    return readValueCE(el);
   }
 
   const cases = [
@@ -43,33 +98,46 @@ window.getActiveEditable = getActiveEditable;
     },
     { name: "Comma", base: "Привіт", ins: ",", expect: "Привіт," },
     { name: "Open paren", base: "(", ins: "тест", expect: "(тест" },
+
+    // ✅ НОВИЙ детермінований кейс для CE/TEXTAREA:
+    // newline НЕ в кінці, а між двома текстовими частинами.
+    // Для CE курсор ставиться на початок другої лінії (після <br>).
     {
       name: "After newline",
-      base: "Привіт\n",
-      ins: "як",
-      expect: "Привіт\nяк",
+      base: "Привіт\nтут",
+      ins: "як ",
+      expect: "Привіт\nяк тут",
     },
+
     { name: "Close paren", base: "Привіт", ins: ")", expect: "Привіт)" },
   ];
 
-  function readValue(el) {
-    return el.value !== undefined ? el.value : el.innerText;
-  }
+  const casesFor = (el) => {
+    if (el instanceof HTMLInputElement) {
+      return cases.filter((c) => c.name !== "After newline");
+    }
+    return cases;
+  };
 
   function runOn(el, label) {
     console.group(`RUN ${label}`);
-    for (const tc of cases) {
+    for (const tc of casesFor(el)) {
       setValue(el, tc.base);
-
-      // ВИКЛИКАЄМО ІМПОРТОВАНУ ФУНКЦІЮ
       insertText(el, tc.ins);
 
       const got = readValue(el);
-      const ok = got === tc.expect;
+
+      if (label === "CONTENTEDITABLE" && tc.name === "After newline") {
+        console.log("[CE DEBUG HTML]", el.innerHTML.replace(/<br>/g, "<br>⏎"));
+      }
+
+      const normGot = got.replace(/\r\n/g, "\n");
+      const ok = normGot === tc.expect;
+
       console.log(`${ok ? "✅" : "❌"} ${tc.name}`, {
         base: tc.base,
         ins: tc.ins,
-        got,
+        got: normGot,
         expect: tc.expect,
       });
     }
@@ -88,27 +156,21 @@ window.getActiveEditable = getActiveEditable;
   `;
   document.body.appendChild(panel);
 
-  panel
-    .querySelectorAll("button")
-    .forEach(
-      (b) =>
-        (b.style.cssText =
-          "margin:2px;padding:6px 8px;border-radius:8px;border:1px solid #444;background:#222;color:#fff;cursor:pointer;")
-    );
+  panel.querySelectorAll("button").forEach((b) => {
+    b.style.cssText =
+      "margin:2px;padding:6px 8px;border-radius:8px;border:1px solid #444;background:#222;color:#fff;cursor:pointer;";
+  });
 
   panel.querySelector("#tInput").onclick = () => {
     setValue(inputEl, "");
-    setCursorEnd(inputEl);
     console.log("Active: INPUT");
   };
   panel.querySelector("#tTA").onclick = () => {
     setValue(taEl, "");
-    setCursorEnd(taEl);
     console.log("Active: TEXTAREA");
   };
   panel.querySelector("#tCE").onclick = () => {
     setValue(ceEl, "");
-    setCursorEnd(ceEl);
     console.log("Active: CE");
   };
   panel.querySelector("#tRun").onclick = () => {
