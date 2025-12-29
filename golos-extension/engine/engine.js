@@ -1,36 +1,44 @@
 import { MSG } from "../utils/messaging.js";
 
-console.log("[Golos Engine] Smart Context v2.0");
+console.log("[Golos Engine] Smart Context v3.6 (Release Candidate)");
 
 let recognition = null;
 let currentTargetTabId = null;
+
 let silenceTimer = null;
 const SILENCE_TIMEOUT_MS = 20000;
+
 let shutdownTimer = null;
 const SHUTDOWN_TIMEOUT_MS = 90000;
 
-// Стан контексту
+// Контекст
 let ctx = {
-  isNewSentence: true, // Чи початок нового речення?
-  hasTrailingSpace: false, // Чи закінчився попередній чанк пробілом?
+  isNewSentence: true,
 };
 
 const MACROS = {
-  // Пунктуація
-  кома: ",",
-  крапка: ".",
+  // --- Пунктуація ---
+  "крапка з комою": ";",
   "знак питання": "?",
   "знак оклику": "!",
-  дефіс: "-",
   двокрапка: ":",
-  тире: " —",
+  кома: ",",
+  крапка: ".",
+  дефіс: "-",
+  тире: " —", // (з пробілом)
+
   "новий рядок": "\n",
   абзац: "\n\n",
+
   "дужка відкривається": "(",
   "дужка закривається": ")",
-  "точка з комою": ";",
 
-  // Спецсимволи
+  // Лапки
+  лапки: '"',
+  "відкрити лапки": "«",
+  "закрити лапки": "»",
+
+  // --- Спецсимволи ---
   смайлик: "🙂",
   амперсанд: "&",
   "зворотна коса риска": "\\",
@@ -40,40 +48,86 @@ const MACROS = {
   "нижнє підкреслення": "_",
   "вертикальна риска": "|",
 
-  // Валюти (Regex-ready roots)
+  // --- Валюти ---
   долар: "$",
   євро: "€",
   фунт: "£",
-  гривн: "₴", // Корінь для гривня, гривні, гривень
+  гривн: "₴", // Корінь для відмінювання
+  // "грн" прибрано, бо є спец-кейс нижче
 };
 
-// Функція для "розумної" капіталізації
+// Суфікси (закінчення) дозволені тільки тут
+const ROOTS_WITH_SUFFIX = new Set(["гривн", "долар", "фунт"]);
+
+function escapeRegExp(str) {
+  return str.replace(/[.*+?^${}()|[\]\\]/g, "\\$&");
+}
+
+// 1. Капіталізація першої літери
 function smartCapitalize(text, forceCap) {
   if (!text) return text;
-
-  // Знаходимо першу літеру (пропускаючи пробіли та символи)
-  // Це виправить проблему, коли пробіл ставав UpperCase
-  return text.replace(/^(\s*)([a-zа-яіїєґ])/i, (match, space, char) => {
-    return space + (forceCap ? char.toUpperCase() : char);
+  return text.replace(/^([^\p{L}]*)([\p{L}])/iu, (m, prefix, ch) => {
+    return prefix + (forceCap ? ch.toUpperCase() : ch);
   });
+}
+
+// 2. Капіталізація всередині тексту після знаків
+function capitalizeAfterPunct(text) {
+  if (!text) return text;
+  return text.replace(
+    /([.?!\n]\s*[«„“"'\(\[\{]*)([\p{L}])/gu,
+    (m, prefix, ch) => {
+      return prefix + ch.toUpperCase();
+    }
+  );
 }
 
 function applyMacros(text) {
   if (!text) return text;
   let processed = text;
 
-  // 1. Макроси
-  for (const [key, value] of Object.entries(MACROS)) {
-    // Покращений Regex: шукає корінь слова + можливі закінчення (для валют)
-    // Наприклад "гривн" зловить "гривня", "гривні", "гривень"
-    const regex = new RegExp(`(^|\\s)${key}[а-яіїєґ]*(?=$|\\s|[.,?!])`, "gi");
-    processed = processed.replace(regex, (match, prefix) => prefix + value);
+  // --- 0. Спец-кейси ---
+  // "грн" або "грн." -> ₴
+  processed = processed.replace(/(^|[^\p{L}])грн\.?(?=$|[^\p{L}])/giu, "$1₴");
+
+  // --- 1. Основна заміна макросів ---
+  // Визначення символів, що складають "слово" (літери + діакритика + апострофи)
+  // Без дужок [], бо ми їх додаємо при побудові RegExp
+  const WORD_CHARS = "\\p{L}\\p{M}’'";
+
+  const keys = Object.keys(MACROS).sort((a, b) => b.length - a.length);
+
+  for (const key of keys) {
+    const value = MACROS[key];
+    const escapedKey = escapeRegExp(key);
+    const allowSuffix = ROOTS_WITH_SUFFIX.has(key);
+
+    // Клас допустимих суфіксів: [chars]*
+    const suffixPattern = allowSuffix ? `[${WORD_CHARS}]*` : "";
+
+    // Regex:
+    // (^|[^chars]) -> Початок або НЕ-слово
+    // (key)
+    // suffix
+    // (?=$|[^chars]) -> Кінець або НЕ-слово
+    const re = new RegExp(
+      `(^|[^${WORD_CHARS}])(${escapedKey})${suffixPattern}(?=$|[^${WORD_CHARS}])`,
+      "giu"
+    );
+
+    processed = processed.replace(re, (match, prefix) => prefix + value);
   }
 
-  // 2. Чистка пунктуації (видалення пробілів перед знаками)
+  // --- 2. Тире-фікс ---
+  processed = processed.replace(/\s+—/gu, " —");
+  processed = processed.replace(/—\s*-\s*/gu, "— ");
+
+  // --- 3. Чистка пунктуації ---
   processed = processed
-    .replace(/\s+([.,?!:);])/g, "$1")
-    .replace(/(\()\s+/g, "$1");
+    .replace(/\s+([.,?!:;)\]}»”"…])/gu, "$1")
+    .replace(/([(\[{«„“"'])\s+/gu, "$1")
+    .replace(/([!?;])(?=[\p{L}\p{N}])/gu, "$1 ")
+    .replace(/([.,:])(?=[\p{L}])/gu, "$1 ");
 
   return processed;
 }
@@ -92,8 +146,7 @@ async function initRecognition() {
 
   rec.onstart = () => {
     console.log("[Golos Engine] ON");
-    ctx.isNewSentence = true; // Скидаємо контекст при старті
-    ctx.hasTrailingSpace = false;
+    ctx.isNewSentence = true;
     sendState("listening");
     resetSilenceTimer();
     if (shutdownTimer) clearTimeout(shutdownTimer);
@@ -113,43 +166,36 @@ async function initRecognition() {
 
     for (let i = event.resultIndex; i < event.results.length; i++) {
       const res = event.results[i];
-      if (res.isFinal) {
-        final += res[0].transcript;
-      } else {
-        interim += res[0].transcript;
-      }
+      if (res.isFinal) final += res[0].transcript;
+      else interim += res[0].transcript;
     }
 
     if (final) {
-      // 1. Зберігаємо оригінальні пробіли від Chrome для аналізу
-      const rawFinal = final;
+      // 0) Нормалізація входу
+      // НЕ trim(), інакше слова злипаються між чанками ("Сьогоднія")
+      // Замінюємо будь-яку кількість пробілів на початку на один
+      final = final.replace(/^\s+/u, " ");
 
-      // 2. Застосовуємо макроси
+      // Прибираємо маркер списку "- " на старті чанка (часта проблема Chrome)
+      final = final.replace(/^\s*-\s+/u, "");
+
+      console.log(`[RAW]: '${final}'`);
+
       final = applyMacros(final);
+      final = capitalizeAfterPunct(final);
 
-      // 3. Логіка капіталізації
-      // Якщо це початок нового речення - робимо велику літеру
       if (ctx.isNewSentence) {
         final = smartCapitalize(final, true);
-      } else {
-        // Якщо це середина речення, Chrome може все одно дати велику літеру
-        // Можна примусово зменшити, але обережно (власні назви)
-        // Поки що лишаємо як є, або можна зробити smartCapitalize(final, false)
       }
 
-      // 4. Оновлюємо контекст для наступного чанка
+      // 4. Оновлення контексту
+      // Для перевірки кінця речення trim() безпечний, бо ми перевіряємо тільки останній символ
       const trimmed = final.trim();
       if (trimmed.length > 0) {
         const lastChar = trimmed.slice(-1);
-        // Якщо закінчується на . ? ! — наступний чанк буде з великої
-        if ([".", "?", "!", "\n"].includes(lastChar)) {
-          ctx.isNewSentence = true;
-        } else {
-          ctx.isNewSentence = false;
-        }
+        ctx.isNewSentence = [".", "?", "!", "\n"].includes(lastChar);
       }
 
-      // Відправляємо
       if (currentTargetTabId) {
         chrome.runtime.sendMessage({
           type: MSG.EVENT_TRANSCRIPT,
@@ -159,7 +205,6 @@ async function initRecognition() {
         });
       }
     } else if (interim) {
-      // Для interim просто шлемо як є
       chrome.runtime.sendMessage({
         type: MSG.EVENT_TRANSCRIPT,
         text: interim,
@@ -172,6 +217,7 @@ async function initRecognition() {
   rec.onerror = (e) => {
     if (e.error !== "no-speech") sendState("error");
   };
+
   return rec;
 }
 
@@ -185,13 +231,12 @@ function stopSession() {
 }
 
 function sendState(state) {
-  if (currentTargetTabId) {
-    chrome.runtime.sendMessage({
-      type: MSG.EVENT_STATE_CHANGE,
-      state: state,
-      targetTabId: currentTargetTabId,
-    });
-  }
+  if (!currentTargetTabId) return;
+  chrome.runtime.sendMessage({
+    type: MSG.EVENT_STATE_CHANGE,
+    state,
+    targetTabId: currentTargetTabId,
+  });
 }
 
 chrome.runtime.onMessage.addListener((message, sender, sendResponse) => {
