@@ -1,6 +1,6 @@
 import { MSG } from "../utils/messaging.js";
 
-console.log("[Golos Engine] Smart Context v3.6 (Release Candidate)");
+console.log("[Golos Engine] Smart Context v3.7 (Deep Context)");
 
 let recognition = null;
 let currentTargetTabId = null;
@@ -52,11 +52,10 @@ const MACROS = {
   долар: "$",
   євро: "€",
   фунт: "£",
-  гривн: "₴", // Корінь для відмінювання
-  // "грн" прибрано, бо є спец-кейс нижче
+  гривн: "₴", // Корінь
 };
 
-// Суфікси (закінчення) дозволені тільки тут
+// Суфікси
 const ROOTS_WITH_SUFFIX = new Set(["гривн", "долар", "фунт"]);
 
 function escapeRegExp(str) {
@@ -75,7 +74,7 @@ function smartCapitalize(text, forceCap) {
 function capitalizeAfterPunct(text) {
   if (!text) return text;
   return text.replace(
-    /([.?!\n]\s*[«„“"'\(\[\{]*)([\p{L}])/gu,
+    /([.?!:\n]\s*[«„“"'\(\[\{]*)([\p{L}])/gu,
     (m, prefix, ch) => {
       return prefix + ch.toUpperCase();
     }
@@ -87,12 +86,9 @@ function applyMacros(text) {
   let processed = text;
 
   // --- 0. Спец-кейси ---
-  // "грн" або "грн." -> ₴
   processed = processed.replace(/(^|[^\p{L}])грн\.?(?=$|[^\p{L}])/giu, "$1₴");
 
   // --- 1. Основна заміна макросів ---
-  // Визначення символів, що складають "слово" (літери + діакритика + апострофи)
-  // Без дужок [], бо ми їх додаємо при побудові RegExp
   const WORD_CHARS = "\\p{L}\\p{M}’'";
 
   const keys = Object.keys(MACROS).sort((a, b) => b.length - a.length);
@@ -102,14 +98,8 @@ function applyMacros(text) {
     const escapedKey = escapeRegExp(key);
     const allowSuffix = ROOTS_WITH_SUFFIX.has(key);
 
-    // Клас допустимих суфіксів: [chars]*
     const suffixPattern = allowSuffix ? `[${WORD_CHARS}]*` : "";
 
-    // Regex:
-    // (^|[^chars]) -> Початок або НЕ-слово
-    // (key)
-    // suffix
-    // (?=$|[^chars]) -> Кінець або НЕ-слово
     const re = new RegExp(
       `(^|[^${WORD_CHARS}])(${escapedKey})${suffixPattern}(?=$|[^${WORD_CHARS}])`,
       "giu"
@@ -171,13 +161,9 @@ async function initRecognition() {
     }
 
     if (final) {
-      // 0) Нормалізація входу
-      // НЕ trim(), інакше слова злипаються між чанками ("Сьогоднія")
-      // Замінюємо будь-яку кількість пробілів на початку на один
+      // Нормалізація
       final = final.replace(/^\s+/u, " ");
-
-      // Прибираємо маркер списку "- " на старті чанка (часта проблема Chrome)
-      final = final.replace(/^\s*-\s+/u, "");
+      final = final.replace(/^\s*-\s+(?=[\p{L}\p{M}])/u, "");
 
       console.log(`[RAW]: '${final}'`);
 
@@ -188,12 +174,17 @@ async function initRecognition() {
         final = smartCapitalize(final, true);
       }
 
-      // 4. Оновлення контексту
-      // Для перевірки кінця речення trim() безпечний, бо ми перевіряємо тільки останній символ
-      const trimmed = final.trim();
-      if (trimmed.length > 0) {
-        const lastChar = trimmed.slice(-1);
-        ctx.isNewSentence = [".", "?", "!", "\n"].includes(lastChar);
+      // 4. Оновлення контексту (Ваша пропозиція)
+      // а) Прибираємо ТІЛЬКИ горизонтальні пробіли, щоб не вбити \n
+      const tail = final.replace(/[ \t]+$/u, "");
+
+      // б) Знімаємо "шкаралупу" з дужок та лапок, щоб побачити знак
+      const tailStripped = tail.replace(/[»”"'\)\]\}]+$/u, "");
+
+      if (tailStripped.length > 0) {
+        const lastChar = tailStripped.slice(-1);
+        // Додано двокрапку [:] до списку тригерів
+        ctx.isNewSentence = [".", "?", "!", "\n", ":"].includes(lastChar);
       }
 
       if (currentTargetTabId) {
