@@ -1,4 +1,4 @@
-import { MSG } from "../utils/messaging.js";
+import { MSG } from "../shared/messaging.js";
 
 console.log("[Golos Engine] Smart Context v3.7 (Deep Context)");
 

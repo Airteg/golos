@@ -1,14 +1,14 @@
 (async () => {
   try {
-    const srcMessaging = chrome.runtime.getURL("utils/messaging.js");
-    const srcWidget = chrome.runtime.getURL("content/dom-injector.js");
-    const srcInput = chrome.runtime.getURL("content/input-simulator.js");
+    const srcMessaging = chrome.runtime.getURL("src/shared/messaging.js");
+    const srcWidget = chrome.runtime.getURL("src/content/ui/widget.js");
+    const srcInput = chrome.runtime.getURL("src/core/input.js");
 
     const { MSG } = await import(srcMessaging);
     const { GolosWidget } = await import(srcWidget);
     const { insertText, getActiveEditable } = await import(srcInput);
 
-    console.log("[Golos Host] All modules loaded v2.4 Stable");
+    console.log("[Golos Host] All modules loaded v3.0 Release");
     const widget = new GolosWidget();
 
     widget.onStopClick(() => {
@@ -25,7 +25,6 @@
         } else {
           sendResponse({ ok: false });
         }
-
         return false;
       }
 

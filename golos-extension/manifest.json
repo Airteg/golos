@@ -6,16 +6,16 @@
   "permissions": ["activeTab", "storage", "tabs", "contextMenus", "offscreen"],
   "host_permissions": ["<all_urls>"],
   "background": {
-    "service_worker": "background/service-worker.js",
+    "service_worker": "src/background/service-worker.js",
     "type": "module"
   },
   "action": {
     "default_title": "Start Dictation",
     "default_icon": {
-      "16": "assets/icons/icon-green-16.png",
-      "32": "assets/icons/icon-green-32.png",
-      "48": "assets/icons/icon-green-48.png",
-      "128": "assets/icons/icon-green-128.png"
+      "16": "src/assets/icons/icon-green-16.png",
+      "32": "src/assets/icons/icon-green-32.png",
+      "48": "src/assets/icons/icon-green-48.png",
+      "128": "src/assets/icons/icon-green-128.png"
     }
   },
   "commands": {
@@ -27,36 +27,36 @@
     }
   },
   "options_ui": {
-    "page": "options/options.html",
+    "page": "src/options/options.html",
     "open_in_tab": true
   },
   "content_scripts": [
     {
       "matches": ["<all_urls>"],
-      "js": ["content/content.js"],
+      "js": ["src/content/loader.js"],
       "run_at": "document_idle"
     }
   ],
   "web_accessible_resources": [
     {
       "resources": [
-        "engine/engine.html",
-        "assets/styles.css",
-        "assets/icons/*.png",
-        "assets/sounds/*.mp3",
-        "assets/*",
-        "utils/messaging.js",
-        "content/dom-injector.js",
-        "content/input-simulator.js",
-        "test/*"
+        "src/core/engine.html",
+        "src/assets/styles.css",
+        "src/assets/icons/*.png",
+        "src/assets/sounds/*.mp3",
+        "src/assets/microphone.svg",
+        "src/background/offscreen.html",
+        "src/shared/messaging.js",
+        "src/content/ui/widget.js",
+        "src/core/input.js"
       ],
       "matches": ["<all_urls>"]
     }
   ],
   "icons": {
-    "16": "assets/icons/icon-green-16.png",
-    "32": "assets/icons/icon-green-32.png",
-    "48": "assets/icons/icon-green-48.png",
-    "128": "assets/icons/icon-green-128.png"
+    "16": "src/assets/icons/icon-green-16.png",
+    "32": "src/assets/icons/icon-green-32.png",
+    "48": "src/assets/icons/icon-green-48.png",
+    "128": "src/assets/icons/icon-green-128.png"
   }
 }

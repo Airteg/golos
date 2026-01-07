@@ -1,36 +1,49 @@
-import { MSG } from "../utils/messaging.js";
+import { MSG } from "../shared/messaging.js";
 
-console.log("[Golos BG] Router v3.1 Debounced Audio");
+console.log("[Golos BG] Router v3.4 Stable (Safe Offscreen)");
 
 let engineTabId = null;
 let isListening = false;
 let creatingOffscreen = false;
-
 let lastOffTime = 0;
 
 async function setupOffscreenDocument(path) {
+  // 1. Перевірка наявності
   const existingContexts = await chrome.runtime.getContexts({
     contextTypes: ["OFFSCREEN_DOCUMENT"],
   });
   if (existingContexts.length > 0) return;
 
+  // 2. Перевірка замка
   if (creatingOffscreen) return;
   creatingOffscreen = true;
 
-  await chrome.offscreen.createDocument({
-    url: path,
-    reasons: ["AUDIO_PLAYBACK"],
-    justification: "Notification sounds for voice dictation",
-  });
-  creatingOffscreen = false;
+  try {
+    await chrome.offscreen.createDocument({
+      url: path,
+      reasons: ["AUDIO_PLAYBACK"],
+      justification: "Notification sounds for voice dictation",
+    });
+  } catch (err) {
+    // 3. Безпечна перевірка помилки
+    const msg = String(err?.message || "");
+    // Ігноруємо помилку, якщо документ створився паралельно, інакше логуємо
+    if (!msg.startsWith("Only a single offscreen")) {
+      console.warn("[Golos BG] Offscreen creation failed:", err);
+    }
+  } finally {
+    // 4. Гарантоване зняття замка
+    creatingOffscreen = false;
+  }
 }
 
 async function playSound(filename) {
   try {
-    await setupOffscreenDocument("background/offscreen.html");
+    // Await тут гарантує, що документ готовий перед відправкою повідомлення
+    await setupOffscreenDocument("src/background/offscreen.html");
     chrome.runtime.sendMessage({
       type: "SFX_PLAY",
-      path: `assets/sounds/${filename}`,
+      path: `src/assets/sounds/${filename}`,
       volume: 0.6,
     });
   } catch (e) {
@@ -40,9 +53,7 @@ async function playSound(filename) {
 
 function playOff() {
   const now = Date.now();
-
   if (now - lastOffTime < 500) {
-    console.log("[Golos BG] Skipped duplicate OFF sound");
     return;
   }
   lastOffTime = now;
@@ -50,7 +61,7 @@ function playOff() {
 }
 
 async function ensureEngineTab() {
-  const engineUrl = chrome.runtime.getURL("engine/engine.html");
+  const engineUrl = chrome.runtime.getURL("src/core/engine.html");
   try {
     const tabs = await chrome.tabs.query({ url: engineUrl });
     if (tabs.length > 0) {
@@ -75,8 +86,8 @@ function setVisualState(state) {
     isListening = true;
     chrome.action.setIcon({
       path: {
-        16: "/assets/icons/icon-red-16.png",
-        32: "/assets/icons/icon-red-32.png",
+        16: "src/assets/icons/icon-red-16.png",
+        32: "src/assets/icons/icon-red-32.png",
       },
     });
     chrome.action.setBadgeText({ text: "" });
@@ -84,8 +95,8 @@ function setVisualState(state) {
     isListening = false;
     chrome.action.setIcon({
       path: {
-        16: "/assets/icons/icon-green-16.png",
-        32: "/assets/icons/icon-green-32.png",
+        16: "src/assets/icons/icon-green-16.png",
+        32: "src/assets/icons/icon-green-32.png",
       },
     });
     chrome.action.setBadgeText({ text: "" });
@@ -114,11 +125,12 @@ async function sendMessageToEngineWithRetry(
 }
 
 async function toggleSession() {
-  setupOffscreenDocument("background/offscreen.html");
+  // Тут await не обов'язковий, бо playSound("on.mp3") нижче все одно почекає.
+  // Але залишаємо виклик для "розігріву".
+  setupOffscreenDocument("src/background/offscreen.html");
 
   if (isListening) {
     console.log("[Golos BG] Action: STOP");
-
     playOff();
     if (engineTabId) {
       sendMessageToEngineWithRetry(
@@ -129,9 +141,7 @@ async function toggleSession() {
     }
     setVisualState("idle");
   } else {
-    // === START ===
     console.log("[Golos BG] Action: START");
-
     const tabs = await chrome.tabs.query({
       active: true,
       lastFocusedWindow: true,
@@ -162,12 +172,11 @@ async function toggleSession() {
 
     setVisualState("listening");
 
+    // Тут ми гарантовано чекаємо створення документа всередині playSound
     playSound("on.mp3");
+
     sendMessageToEngineWithRetry(
-      {
-        type: MSG.CMD_START_SESSION,
-        targetTabId: activeTab.id,
-      },
+      { type: MSG.CMD_START_SESSION, targetTabId: activeTab.id },
       10,
       300
     ).catch((e) => {

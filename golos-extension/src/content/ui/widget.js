@@ -31,12 +31,14 @@ export class GolosWidget {
 
     const linkElem = document.createElement("link");
     linkElem.setAttribute("rel", "stylesheet");
-    linkElem.setAttribute("href", chrome.runtime.getURL("assets/styles.css"));
+    linkElem.setAttribute(
+      "href",
+      chrome.runtime.getURL("src/assets/styles.css")
+    );
     this.shadow.appendChild(linkElem);
 
     const wrapper = document.createElement("div");
     wrapper.className = "golos-widget golos-hidden";
-
     wrapper.innerHTML = `
       <div class="golos-header" id="drag-handle">
         <div class="golos-status">
@@ -56,12 +58,10 @@ export class GolosWidget {
     this.statusText = wrapper.querySelector(".golos-status-text");
     this.contentArea = wrapper.querySelector(".golos-content");
     this.closeBtn = wrapper.querySelector(".golos-close");
-
     this.closeBtn.addEventListener("click", (e) => {
       e.stopPropagation();
       if (this.onStopCallback) this.onStopCallback();
     });
-
     document.body.appendChild(this.host);
 
     const header = wrapper.querySelector(".golos-header");
