@@ -9,9 +9,6 @@ export class GolosWidget {
     this.closeBtn = null;
     this._isMounted = false;
     this.onStopCallback = null;
-
-    // ЗВУКІВ ТУТ БІЛЬШЕ НЕМАЄ.
-    // Ми перенесли їх в Engine, щоб обійти блокування Chrome.
   }
 
   onStopClick(callback) {
@@ -22,7 +19,6 @@ export class GolosWidget {
     if (this._isMounted) return;
     this.host = document.createElement("div");
     this.host.id = "golos-shadow-host";
-
     this.host.style.position = "fixed";
     this.host.style.zIndex = "2147483647";
     this.host.style.display = "block";
@@ -167,7 +163,6 @@ export class GolosWidget {
   }
 
   setStatusCode(code) {
-    // Тільки візуал!
     console.log("[GolosWidget] status:", code);
     if (!this.statusDot) return;
 

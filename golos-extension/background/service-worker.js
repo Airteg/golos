@@ -6,10 +6,8 @@ let engineTabId = null;
 let isListening = false;
 let creatingOffscreen = false;
 
-// Змінна для захисту від подвійного звуку вимкнення
 let lastOffTime = 0;
 
-// --- 1. Налаштування OFFSCREEN ---
 async function setupOffscreenDocument(path) {
   const existingContexts = await chrome.runtime.getContexts({
     contextTypes: ["OFFSCREEN_DOCUMENT"],
@@ -27,7 +25,6 @@ async function setupOffscreenDocument(path) {
   creatingOffscreen = false;
 }
 
-// Базова функція програвання
 async function playSound(filename) {
   try {
     await setupOffscreenDocument("background/offscreen.html");
@@ -41,10 +38,9 @@ async function playSound(filename) {
   }
 }
 
-// 🔥 DEBOUNCE FUNCTION
 function playOff() {
   const now = Date.now();
-  // Якщо з минулого "OFF" пройшло менше 500мс - ігноруємо
+
   if (now - lastOffTime < 500) {
     console.log("[Golos BG] Skipped duplicate OFF sound");
     return;
@@ -53,7 +49,6 @@ function playOff() {
   playSound("off.mp3");
 }
 
-// --- 2. Керування вкладкою-двигуном ---
 async function ensureEngineTab() {
   const engineUrl = chrome.runtime.getURL("engine/engine.html");
   try {
@@ -75,7 +70,6 @@ async function ensureEngineTab() {
   }
 }
 
-// --- 3. Візуалізація ---
 function setVisualState(state) {
   if (state === "listening") {
     isListening = true;
@@ -119,16 +113,13 @@ async function sendMessageToEngineWithRetry(
   throw new Error(`Engine failed to respond to ${message.type}`);
 }
 
-// --- 4. Головний перемикач (Toggle) ---
 async function toggleSession() {
   setupOffscreenDocument("background/offscreen.html");
 
   if (isListening) {
-    // === STOP ===
     console.log("[Golos BG] Action: STOP");
 
-    playOff(); // <--- ВИКОРИСТОВУЄМО ТВІЙ ФІКС
-
+    playOff();
     if (engineTabId) {
       sendMessageToEngineWithRetry(
         { type: MSG.CMD_STOP_SESSION },
@@ -171,8 +162,7 @@ async function toggleSession() {
 
     setVisualState("listening");
 
-    playSound("on.mp3"); // START не потребує дебаунсу
-
+    playSound("on.mp3");
     sendMessageToEngineWithRetry(
       {
         type: MSG.CMD_START_SESSION,
@@ -187,7 +177,6 @@ async function toggleSession() {
   }
 }
 
-// Listeners
 chrome.action.onClicked.addListener(toggleSession);
 chrome.commands.onCommand.addListener((cmd) => {
   if (cmd === "golos-process-selection") toggleSession();
@@ -213,7 +202,7 @@ chrome.runtime.onMessage.addListener((message, sender, sendResponse) => {
   ) {
     if (message.type === MSG.EVENT_STATE_CHANGE) {
       if (message.state === "idle" && isListening) {
-        playOff(); // <--- ФІКС (якщо тайм-аут прийшов з Engine)
+        playOff();
         setVisualState("idle");
       }
       if (message.state === "error") {
@@ -244,7 +233,7 @@ chrome.contextMenus.onClicked.addListener((info) => {
 chrome.tabs.onActivated.addListener(async () => {
   if (isListening) {
     console.log("[Golos BG] Tab changed. Auto-stopping.");
-    playOff(); // <--- ФІКС
+    playOff();
     if (engineTabId)
       sendMessageToEngineWithRetry(
         { type: MSG.CMD_STOP_SESSION },

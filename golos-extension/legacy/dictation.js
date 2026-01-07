@@ -28,7 +28,6 @@ btn.addEventListener("click", () => {
 
 updateUI();
 
-// Отримуємо текст від content-script
 chrome.runtime.onMessage.addListener((msg) => {
   if (msg.type === "DICTATION_INTERIM") {
     liveEl.textContent = msg.text;

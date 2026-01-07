@@ -11,13 +11,11 @@ const SILENCE_TIMEOUT_MS = 20000;
 let shutdownTimer = null;
 const SHUTDOWN_TIMEOUT_MS = 90000;
 
-// Контекст
 let ctx = {
   isNewSentence: true,
 };
 
 const MACROS = {
-  // --- Пунктуація ---
   "крапка з комою": ";",
   "знак питання": "?",
   "знак оклику": "!",
@@ -25,7 +23,7 @@ const MACROS = {
   кома: ",",
   крапка: ".",
   дефіс: "-",
-  тире: " —", // (з пробілом)
+  тире: " —",
 
   "новий рядок": "\n",
   абзац: "\n\n",
@@ -33,12 +31,10 @@ const MACROS = {
   "дужка відкривається": "(",
   "дужка закривається": ")",
 
-  // Лапки
   лапки: '"',
   "відкрити лапки": "«",
   "закрити лапки": "»",
 
-  // --- Спецсимволи ---
   смайлик: "🙂",
   амперсанд: "&",
   "зворотна коса риска": "\\",
@@ -48,21 +44,18 @@ const MACROS = {
   "нижнє підкреслення": "_",
   "вертикальна риска": "|",
 
-  // --- Валюти ---
   долар: "$",
   євро: "€",
   фунт: "£",
-  гривн: "₴", // Корінь
+  гривн: "₴",
 };
 
-// Суфікси
 const ROOTS_WITH_SUFFIX = new Set(["гривн", "долар", "фунт"]);
 
 function escapeRegExp(str) {
   return str.replace(/[.*+?^${}()|[\]\\]/g, "\\$&");
 }
 
-// 1. Капіталізація першої літери
 function smartCapitalize(text, forceCap) {
   if (!text) return text;
   return text.replace(/^([^\p{L}]*)([\p{L}])/iu, (m, prefix, ch) => {
@@ -70,7 +63,6 @@ function smartCapitalize(text, forceCap) {
   });
 }
 
-// 2. Капіталізація всередині тексту після знаків
 function capitalizeAfterPunct(text) {
   if (!text) return text;
   return text.replace(
@@ -85,10 +77,8 @@ function applyMacros(text) {
   if (!text) return text;
   let processed = text;
 
-  // --- 0. Спец-кейси ---
   processed = processed.replace(/(^|[^\p{L}])грн\.?(?=$|[^\p{L}])/giu, "$1₴");
 
-  // --- 1. Основна заміна макросів ---
   const WORD_CHARS = "\\p{L}\\p{M}’'";
 
   const keys = Object.keys(MACROS).sort((a, b) => b.length - a.length);
@@ -108,11 +98,9 @@ function applyMacros(text) {
     processed = processed.replace(re, (match, prefix) => prefix + value);
   }
 
-  // --- 2. Тире-фікс ---
   processed = processed.replace(/\s+—/gu, " —");
   processed = processed.replace(/—\s*-\s*/gu, "— ");
 
-  // --- 3. Чистка пунктуації ---
   processed = processed
     .replace(/\s+([.,?!:;)\]}»”"…])/gu, "$1")
     .replace(/([(\[{«„“"'])\s+/gu, "$1")
@@ -161,7 +149,6 @@ async function initRecognition() {
     }
 
     if (final) {
-      // Нормалізація
       final = final.replace(/^\s+/u, " ");
       final = final.replace(/^\s*-\s+(?=[\p{L}\p{M}])/u, "");
 
@@ -174,16 +161,13 @@ async function initRecognition() {
         final = smartCapitalize(final, true);
       }
 
-      // 4. Оновлення контексту (Ваша пропозиція)
-      // а) Прибираємо ТІЛЬКИ горизонтальні пробіли, щоб не вбити \n
       const tail = final.replace(/[ \t]+$/u, "");
 
-      // б) Знімаємо "шкаралупу" з дужок та лапок, щоб побачити знак
       const tailStripped = tail.replace(/[»”"'\)\]\}]+$/u, "");
 
       if (tailStripped.length > 0) {
         const lastChar = tailStripped.slice(-1);
-        // Додано двокрапку [:] до списку тригерів
+
         ctx.isNewSentence = [".", "?", "!", "\n", ":"].includes(lastChar);
       }
 

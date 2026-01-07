@@ -16,8 +16,6 @@ export function getActiveEditable() {
   return null;
 }
 
-// === ЛОГІКА ОБХОДУ DOM ===
-
 function lastCharInNode(node) {
   if (!node) return null;
 
@@ -30,7 +28,6 @@ function lastCharInNode(node) {
     const el = node;
     if (el.tagName === "BR") return "\n";
 
-    // Проходимо по дітях з кінця до початку
     for (let i = el.childNodes.length - 1; i >= 0; i--) {
       const ch = lastCharInNode(el.childNodes[i]);
       if (ch != null) return ch;
@@ -47,19 +44,16 @@ function getCharBeforeCursorCE(rootEl) {
   let node = r.startContainer;
   const offset = r.startOffset;
 
-  // 1. Швидкий шлях: курсор всередині тексту
   if (node.nodeType === Node.TEXT_NODE && offset > 0) {
     return node.textContent[offset - 1] ?? null;
   }
 
-  // 2. Курсор між вузлами елемента
   if (node.nodeType === Node.ELEMENT_NODE && offset > 0) {
     const prev = node.childNodes[offset - 1];
     const ch = lastCharInNode(prev);
     if (ch != null) return ch;
   }
 
-  // 3. Fallback: йдемо назад по дереву
   while (node && node !== rootEl) {
     let prev = node.previousSibling;
     while (prev) {
@@ -86,14 +80,10 @@ function getCharBeforeCursor(el) {
 
 export function insertText(el, text) {
   if (!el || !text) return;
-
-  // 1. Нормалізація
   let cleanText = text;
   if (cleanText.trim().length > 0) {
     cleanText = cleanText.trimStart();
   }
-
-  // 2. Аналіз контексту
   let charBefore = getCharBeforeCursor(el);
   if (charBefore === "\u00A0") charBefore = " ";
 
@@ -119,8 +109,6 @@ export function insertText(el, text) {
     "\n",
     "\r",
   ]);
-
-  // ПРАВКА: Прибрали тире з regex, бо є окрема перевірка startsWithDash
   const noLeadingSpaceTokens = /^[\s]*[.,!?:;)\]}»”"…>]/;
   const startsWithDash = /^[\s]*[—-]/.test(cleanText);
 
@@ -142,7 +130,6 @@ export function insertText(el, text) {
 
   const textToInsert = spacer + cleanText;
 
-  // 3. Вставка
   if (el instanceof HTMLInputElement || el instanceof HTMLTextAreaElement) {
     const start = el.selectionStart || 0;
     const end = el.selectionEnd || 0;

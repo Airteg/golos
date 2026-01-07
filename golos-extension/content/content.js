@@ -17,7 +17,6 @@
     });
 
     chrome.runtime.onMessage.addListener((message, sender, sendResponse) => {
-      // 1. PING: Відповідаємо миттєво
       if (message.type === MSG.CMD_PING_WIDGET) {
         const el = getActiveEditable();
         if (el) {
@@ -26,11 +25,10 @@
         } else {
           sendResponse({ ok: false });
         }
-        // Важливо: ми вже викликали sendResponse, тому повертаємо false
+
         return false;
       }
 
-      // 2. STATE CHANGE
       if (message.type === MSG.EVENT_STATE_CHANGE) {
         widget.setStatusCode(message.state);
         if (message.state === "idle") {
@@ -39,7 +37,6 @@
         return false;
       }
 
-      // 3. TRANSCRIPT
       if (message.type === MSG.EVENT_TRANSCRIPT) {
         widget.updateText(message.text, message.isFinal);
         if (message.isFinal) {
@@ -49,7 +46,6 @@
         return false;
       }
 
-      // Для всіх інших випадків
       return false;
     });
   } catch (err) {

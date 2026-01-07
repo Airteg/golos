@@ -1,11 +1,10 @@
-const players = new Map(); // key: path -> Audio
+const players = new Map();
 
 chrome.runtime.onMessage.addListener((msg) => {
   if (msg?.type !== "SFX_PLAY") return;
 
   try {
     const path = msg.path;
-    // Отримуємо URL лише якщо плеєра ще немає, або можна і щоразу (це дешева операція)
     const url = chrome.runtime.getURL(path);
 
     let audio = players.get(path);
@@ -13,7 +12,6 @@ chrome.runtime.onMessage.addListener((msg) => {
       audio = new Audio(url);
       players.set(path, audio);
     } else {
-      // Якщо звук вже грав - зупиняємо і перемотуємо
       audio.pause();
       audio.currentTime = 0;
     }
