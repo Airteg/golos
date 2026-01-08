@@ -86,8 +86,8 @@ function setVisualState(state) {
     isListening = true;
     chrome.action.setIcon({
       path: {
-        16: "src/assets/icons/icon-red-16.png",
-        32: "src/assets/icons/icon-red-32.png",
+        16: "/src/assets/icons/icon-red-16.png",
+        32: "/src/assets/icons/icon-red-32.png",
       },
     });
     chrome.action.setBadgeText({ text: "" });
@@ -95,8 +95,8 @@ function setVisualState(state) {
     isListening = false;
     chrome.action.setIcon({
       path: {
-        16: "src/assets/icons/icon-green-16.png",
-        32: "src/assets/icons/icon-green-32.png",
+        16: "/src/assets/icons/icon-green-16.png",
+        32: "/src/assets/icons/icon-green-32.png",
       },
     });
     chrome.action.setBadgeText({ text: "" });
